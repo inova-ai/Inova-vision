@@ -105,9 +105,36 @@ async function poll() {
       generate.disabled = false;
       resultBadge.textContent = "COMPLETED";
       blueprint.textContent = `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · AI shot planning aktif · ${j.productName || "Product"}.`;
-      document.querySelector(".video-box").innerHTML = j.outputUrl
-        ? `<video controls playsinline preload="metadata" style="width:100%;height:100%;object-fit:contain;border-radius:14px" src="${j.outputUrl}"></video>`
+      const videoBox = document.querySelector(".video-box");
+      videoBox.innerHTML = j.outputUrl
+        ? `<video id="resultVideo" controls playsinline preload="metadata"
+             style="width:100%;height:100%;object-fit:contain;border-radius:14px;background:#111"
+             src="${j.outputUrl}"></video>`
         : "VIDEO SELESAI";
+
+      // Some Android browsers are stricter about MP4 streaming. If the direct
+      // video URL cannot load metadata, retry once by fetching the MP4 as a
+      // Blob and playing it locally. This is only a playback fallback; the
+      // original output URL remains the download URL.
+      if (j.outputUrl) {
+        const video = document.querySelector("#resultVideo");
+        video?.addEventListener("error", async () => {
+          if (video.dataset.fallback === "1") return;
+          video.dataset.fallback = "1";
+          try {
+            const rr = await fetch(j.outputUrl, { cache: "no-store" });
+            if (!rr.ok) throw new Error(`HTTP ${rr.status}`);
+            const blob = await rr.blob();
+            if (!blob.size) throw new Error("Video kosong");
+            const localUrl = URL.createObjectURL(blob);
+            video.src = localUrl;
+            video.load();
+          } catch (e) {
+            console.error("Video playback fallback failed", e);
+            videoBox.insertAdjacentHTML("beforeend", `<div class="video-error">Video selesai dibuat, tetapi browser gagal memutarnya. Coba tombol Download MP4.</div>`);
+          }
+        }, { once: true });
+      }
       if (j.outputUrl) {
         let dl = document.querySelector("#downloadVideo");
         if (!dl) {

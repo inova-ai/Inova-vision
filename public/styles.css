@@ -6,3 +6,5 @@
 .install-help { position: fixed; left: 14px; right: 14px; bottom: 14px; z-index: 1000; display: grid; gap: 8px; padding: 16px; border-radius: 16px; background: rgba(11,16,32,.97); border: 1px solid rgba(0,229,255,.35); box-shadow: 0 14px 45px rgba(0,0,0,.35); }
 .install-help[hidden], .install-app[hidden] { display: none !important; }
 .install-help button { justify-self: end; border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+
+.video-error{padding:10px 14px;margin-top:8px;border-radius:10px;background:rgba(255,255,255,.06);color:#aaa;font-size:13px;line-height:1.45}

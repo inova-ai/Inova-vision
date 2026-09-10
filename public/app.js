@@ -150,9 +150,17 @@ async function poll() {
           try {
             const probe = await fetch(source.src, { method: "HEAD", cache: "no-store" });
             console.warn("INOVA MP4 HEAD", probe.status, probe.headers.get("content-type"), probe.headers.get("content-length"), probe.headers.get("accept-ranges"));
+            // One clean retry bypasses stale browser/PWA media state.
+            if (!video.dataset.retry) {
+              video.dataset.retry = "1";
+              const retryUrl = `${j.outputUrl}${j.outputUrl.includes("?") ? "&" : "?"}mediaRetry=${Date.now()}`;
+              source.src = retryUrl;
+              video.load();
+              return;
+            }
           } catch (probeError) { console.warn("INOVA MP4 probe failed", probeError); }
-          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px"><div><b style="display:block;margin-bottom:8px">Video tidak dapat diputar</b><span>File render tidak berhasil dibaca browser.</span></div></div>`;
-        }, { once: true });
+          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px"><div><b style="display:block;margin-bottom:8px">Video tidak dapat diputar</b><span>Server media tidak mengirim MP4 secara utuh. Periksa Vercel Blob dan deploy versi terbaru.</span></div></div>`;
+        });
         videoBox.replaceChildren(video);
         video.load();
       } else {
@@ -218,7 +226,7 @@ generate.onclick = async () => {
     const raw = await r.text();
     let data;
     try { data = JSON.parse(raw); } catch {
-      throw new Error(`Backend mengembalikan respons bukan JSON (HTTP ${r.status}). Cek /api/health dan Netlify Function Logs.`);
+      throw new Error(`Backend mengembalikan respons bukan JSON (HTTP ${r.status}). Cek /api/health dan Vercel Function Logs.`);
     }
     if (!r.ok) throw new Error(data.error || "Gagal membuat job");
     activeJob = data.job.id;
@@ -246,10 +254,10 @@ async function refreshHealth() {
     const x = await r.json();
     if (!x.blobStorage) {
       engine.textContent = "SET NETLIFY BLOB";
-      renderStep.textContent = "Netlify Blobs belum dapat diakses oleh backend. Pastikan site ter-deploy sebagai Netlify Function.";
+      renderStep.textContent = "Vercel Blob belum terhubung. Pastikan BLOB_READ_WRITE_TOKEN sudah tersedia di Vercel.";
     } else {
-      engine.textContent = "FREE MOTION READY";
-      renderStep.textContent = "100% gratis · gerakan kamera halus tanpa AI generatif, jadi bentuk/logo/teks produk tetap stabil.";
+      engine.textContent = "FREE EDITOR READY";
+      renderStep.textContent = "100% gratis · prompt mengontrol editing lokal: warna, crop 9:16, speed, audio, trim, mirror, sharpen, cinematic.";
     }
   } catch (e) {
     engine.textContent = "HEALTH ERROR";

@@ -1,4 +1,4 @@
-const CACHE = "inova-v6.1.0-prompt-video-editor";
+const CACHE = "inova-v6.3.0-prompt-video-editor";
 const APP_SHELL = ["/", "/styles.css", "/app.js", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", event => {

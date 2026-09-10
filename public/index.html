@@ -24,9 +24,9 @@
   <main>
     <section class="hero">
       <div>
-        <div class="eyebrow">AI AFFILIATE VIDEO STUDIO · V4</div>
+        <div class="eyebrow">AI AFFILIATE VIDEO STUDIO · V6.3</div>
         <h1>Foto atau video.<br><span>Edit jadi konten siap pakai.</span></h1>
-        <p>INOVA bisa membuat video dari foto produk atau mengedit video yang sudah kamu punya. Gunakan prompt untuk memberi arahan gaya dan perubahan.</p>
+        <p>INOVA bisa membuat video dari foto produk atau mengedit video yang sudah kamu punya. Gunakan prompt untuk mengontrol warna, kamera, crop, speed, audio, trim, dan gaya edit tanpa API AI berbayar.</p>
       </div>
       <div class="hero-card">
         <div class="mini-label">AUTOMATIC CREATIVE</div>
@@ -51,7 +51,7 @@
           <input id="sourceVideo" type="file" accept="video/mp4,video/webm,video/quicktime,video/*">
           <div class="upload-icon">🎬</div>
           <strong>Pilih video yang ingin diedit</strong>
-          <span>MP4 / WEBM / MOV · maksimal 3 MB</span>
+          <span>MP4 / WEBM / MOV · maksimal 3 MB · hasil 9:16</span>
         </label>
         <label class="field"><span>Nama produk <small>opsional</small></span><input id="productName" placeholder="Contoh: Serum Brightening 30ml"></label>
       </div>
@@ -67,10 +67,10 @@
           <button data-style="selling"><b>Hard Selling</b><small>Conversion focus</small></button>
         </div>
         <div class="row">
-          <label class="field"><span>Durasi</span><select id="duration"><option value="5">5 detik</option><option value="10">10 detik</option><option value="15" selected>15 detik</option><option value="30">30 detik</option><option value="60">60 detik</option><option value="90">90 detik</option><option value="120">2 menit</option></select></label>
+          <label class="field"><span>Durasi</span><select id="duration"><option value="auto">Otomatis / durasi sumber</option><option value="5">5 detik</option><option value="10">10 detik</option><option value="15" selected>15 detik</option><option value="30">30 detik</option><option value="60">60 detik</option><option value="90">90 detik</option><option value="120">2 menit</option></select></label>
           <label class="field"><span>Format</span><select id="format"><option value="9:16" selected>9:16 · Reels / TikTok</option></select></label>
         </div>
-        <label class="field"><span>Prompt / instruksi edit <small>opsional</small></span><textarea id="prompt" rows="5" placeholder="Contoh: buat opening lebih menarik, zoom perlahan ke produk, lebih terang, cinematic, pertahankan logo dan teks tetap jelas."></textarea></label>
+        <label class="field"><span>Prompt / instruksi edit <small>opsional</small></span><textarea id="prompt" rows="5" placeholder="Contoh: lebih terang, cinematic, tajam, mirror, percepat 1.5x, tanpa suara, potong 2 detik awal, pertahankan logo dan teks."></textarea></label>
         <label class="field"><span>CTA affiliate <small>opsional</small></span><input id="cta" placeholder="Cek produknya sekarang"></label>
         <label class="field"><span>Musik background <small>opsional · MP3/WAV</small></span><input id="music" type="file" accept="audio/mpeg,audio/wav,audio/*"></label>
         <div class="tag-row" style="margin-top:12px"><span>🇮🇩 AI SCRIPT + VOICE READY</span><span>AUTO SUBTITLE</span><span>CTA</span></div>

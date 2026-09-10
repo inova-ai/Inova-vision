@@ -3,10 +3,7 @@
   "functions": {
     "server.js": {
       "maxDuration": 300,
-      "includeFiles": [
-        "public/**",
-        "src/**"
-      ]
+      "includeFiles": "public/**"
     }
   }
 }

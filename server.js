@@ -54,10 +54,25 @@ app.get("/api/blob", async (req, res) => {
     if (!key || key.startsWith("/") || key.includes("..")) return res.status(400).json({ error: "Invalid blob key." });
     const data = await getBlob(key, "arrayBuffer");
     if (data == null) return res.status(404).json({ error: "Blob tidak ditemukan." });
+    const buffer = Buffer.from(data);
     const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".mp3") ? "audio/mpeg" : key.endsWith(".wav") ? "audio/wav" : key.endsWith(".json") ? "application/json" : key.match(/\.(png)$/i) ? "image/png" : key.match(/\.(webp)$/i) ? "image/webp" : "image/jpeg";
     res.set("Content-Type", type);
-    res.set("Cache-Control", "public, max-age=86400");
-    return res.send(Buffer.from(data));
+    res.set("Accept-Ranges", "bytes");
+    res.set("Cache-Control", key.endsWith(".mp4") ? "public, max-age=31536000, immutable" : "public, max-age=86400");
+    if (req.method === "HEAD") return res.set("Content-Length", String(buffer.length)).status(200).end();
+    const rawRange = req.get("range");
+    if (rawRange && key.endsWith(".mp4")) {
+      const m = /^bytes=(\d*)-(\d*)$/i.exec(rawRange.trim());
+      if (!m) return res.status(416).set("Content-Range", `bytes */${buffer.length}`).end();
+      let start = m[1] ? Number(m[1]) : Math.max(0, buffer.length - Number(m[2] || 0));
+      let end = m[2] ? Number(m[2]) : buffer.length - 1;
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= buffer.length || end < start) return res.status(416).set("Content-Range", `bytes */${buffer.length}`).end();
+      end = Math.min(end, buffer.length - 1);
+      const chunk = buffer.subarray(start, end + 1);
+      return res.status(206).set({"Content-Range": `bytes ${start}-${end}/${buffer.length}`, "Content-Length": String(chunk.length)}).send(chunk);
+    }
+    res.set("Content-Length", String(buffer.length));
+    return res.send(buffer);
   } catch (e) {
     console.error("Blob proxy error", e);
     return res.status(500).json({ error: "Gagal membaca blob." });

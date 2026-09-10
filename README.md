@@ -1,19 +1,12 @@
-# INOVA VISION v5.8.2
+# INOVA VISION v5.8.3
 
 Netlify Free Local renderer.
 
-## v5.8.2 blank-video fix
-- Scene rendering no longer uses `zoompan`.
-- Uploaded photos are looped directly into 720x1280 video frames using a simple scale/crop/fps filter.
-- This avoids MP4 files that finish successfully but contain invisible/blank video frames on some ffmpeg-static builds.
-- `drawtext` and `drawbox` remain disabled because the deployed ffmpeg-static build does not provide those filters.
-- Netlify Blobs are materialized directly for uploaded photos, voice and music.
-- No Replicate dependency or webhook.
-
-
-## v5.8.2 MP4 delivery fix
-- Dedicated Netlify Blob function returns MP4 as base64 binary response.
-- Supports HEAD and HTTP Range requests (206 Partial Content).
-- Prevents serverless-http from corrupting binary video bytes.
-- Final MP4 is validated before the job can become COMPLETED.
-- Android/Chrome video element uses a cache-busted MP4 source and graceful playback error fallback.
+## Real render fix
+- The JPEG is explicitly looped as the FFmpeg video input for the entire scene duration.
+- Silent audio is now a separate second input.
+- Voice audio is padded/cut to the requested duration.
+- Each scene is validated for duration and frame count before being stored.
+- The final MP4 is validated for duration and frame count before COMPLETED is written.
+- MP4 delivery uses the dedicated Netlify Blob function with base64 binary responses and Range/206 support.
+- The browser player uses the same-origin `/api/blob` URL.

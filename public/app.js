@@ -183,21 +183,32 @@ cancel.onclick = async () => {
   setProgress(0, "Render dibatalkan", "Kamu bisa membuat video baru.", "READY");
 };
 
-fetch("/api/health").then(async r=>{
-  const raw=await r.text();
-  try{return JSON.parse(raw)}catch{return {configured:false,blobStorage:false}}
-}).then(x=>{
-  if(!x.configured){
-    engine.textContent = "SET REPLICATE API";
-    renderStep.textContent = "Tambahkan REPLICATE_API_TOKEN di Netlify → Project configuration → Environment variables, lalu redeploy.";
-  } else if(!x.scriptAI){
-    engine.textContent = "SET OPENAI API";
-    renderStep.textContent = "Tambahkan OPENAI_API_KEY di Netlify → Project configuration → Environment variables, lalu redeploy.";
-  } else if(!x.blobStorage){
-    engine.textContent = "SET NETLIFY BLOB";
-    renderStep.textContent = "Netlify Blobs belum dapat diakses. Pastikan site sudah ter-deploy sebagai Netlify Function dan redeploy setelah konfigurasi.";
-  } else if(x.ready){
-    engine.textContent = "READY";
-    renderStep.textContent = "Semua layanan utama aktif: OpenAI, Replicate, Netlify Blobs, dan webhook.";
+async function refreshHealth() {
+  try {
+    const r = await fetch(`/api/health?t=${Date.now()}`, { cache: "no-store" });
+    const x = await r.json();
+    if (!x.replicateTokenPresent) {
+      engine.textContent = "SET REPLICATE API";
+      renderStep.textContent = "Netlify Function belum melihat REPLICATE_API_TOKEN. Pastikan variable di scope Production/Functions, simpan, lalu Deploy ulang (bukan hanya Clear cache).";
+    } else if (!x.replicateApiReachable) {
+      engine.textContent = "REPLICATE TOKEN ERROR";
+      renderStep.textContent = `Token terbaca, tetapi Replicate menolak/tidak dapat diakses (${x.replicateError || "unknown error"}). Periksa token Replicate.`;
+    } else if (!x.scriptAI) {
+      engine.textContent = "SET OPENAI API";
+      renderStep.textContent = "REPLICATE aktif. Tambahkan OPENAI_API_KEY di Netlify untuk AI creative planning, lalu redeploy.";
+    } else if (!x.blobStorage) {
+      engine.textContent = "SET NETLIFY BLOB";
+      renderStep.textContent = "Netlify Blobs belum dapat diakses oleh Function. Pastikan site sudah ter-deploy sebagai Netlify Function.";
+    } else if (x.ready) {
+      engine.textContent = "READY";
+      renderStep.textContent = "Semua layanan utama aktif: OpenAI, Replicate, Netlify Blobs, dan webhook.";
+    } else {
+      engine.textContent = "CHECK CONFIG";
+      renderStep.textContent = "Konfigurasi belum lengkap. Buka /api/health untuk melihat status tiap layanan.";
+    }
+  } catch (e) {
+    engine.textContent = "HEALTH ERROR";
+    renderStep.textContent = `Tidak bisa membaca status backend: ${e.message}`;
   }
-});
+}
+refreshHealth();

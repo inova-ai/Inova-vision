@@ -1,2 +1,2 @@
-6.0.0-free-motion
-100% free local product-preserving motion engine using FFmpeg; no paid video API required.
+6.1.0-prompt-video-editor
+Prompt-controlled photo/video editing with hardened Android-compatible MP4 output.

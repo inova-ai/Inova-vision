@@ -8,7 +8,7 @@ import { getStyleList } from "./src/services/creative-engine.js";
 
 const app = express();
 // Netlify Functions have a binary request limit of about 4.5 MB; keep the server-side upload path conservative.
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 9 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 10 } });
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -61,6 +61,8 @@ app.get("/api/blob", async (req, res) => {
     const buffer = Buffer.from(data);
     const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".mp3") ? "audio/mpeg" : key.endsWith(".wav") ? "audio/wav" : key.endsWith(".json") ? "application/json" : key.match(/\.(png)$/i) ? "image/png" : key.match(/\.(webp)$/i) ? "image/webp" : "image/jpeg";
     res.set("Content-Type", type);
+    res.set("Content-Disposition", type === "video/mp4" ? "inline" : "inline");
+    res.set("X-Content-Type-Options", "nosniff");
     res.set("Accept-Ranges", "bytes");
     res.set("Cache-Control", key.endsWith(".mp4") ? "public, max-age=31536000, immutable" : "public, max-age=86400");
     if (req.method === "HEAD") return res.set("Content-Length", String(buffer.length)).status(200).end();
@@ -83,19 +85,26 @@ app.get("/api/blob", async (req, res) => {
   }
 });
 
-app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "music", maxCount: 1 }]), async (req, res) => {
+app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "video", maxCount: 1 }, { name: "music", maxCount: 1 }]), async (req, res) => {
   try {
-    if (!req.files?.photos?.length) return res.status(400).json({ error: "Upload minimal 1 foto produk." });
-    const allFiles = [...(req.files.photos || []), ...(req.files.music || [])];
+    const hasPhotos = Boolean(req.files?.photos?.length);
+    const hasVideo = Boolean(req.files?.video?.length);
+    if (!hasPhotos && !hasVideo) return res.status(400).json({ error: "Upload minimal 1 foto atau 1 video sumber." });
+    if (hasPhotos && hasVideo) return res.status(400).json({ error: "Pilih mode Foto atau Edit Video, jangan upload keduanya sekaligus." });
+    const allFiles = [...(req.files.photos || []), ...(req.files.video || []), ...(req.files.music || [])];
     const totalBytes = allFiles.reduce((sum, f) => sum + (f.size || 0), 0);
     if (totalBytes > 4 * 1024 * 1024) {
       return res.status(413).json({ error: "Total upload maksimal 4 MB pada jalur server. Kompres foto atau upload lebih sedikit foto." });
     }
-    const photos = req.files.photos.filter(f => f.mimetype?.startsWith("image/"));
-    if (!photos.length) return res.status(400).json({ error: "File harus berupa gambar produk." });
+    const photos = (req.files.photos || []).filter(f => f.mimetype?.startsWith("image/"));
+    const videoFile = (req.files.video || [])[0] || null;
+    if (hasPhotos && !photos.length) return res.status(400).json({ error: "File foto harus berupa gambar (JPG, PNG, WEBP)." });
+    if (hasVideo && !videoFile?.mimetype?.startsWith("video/")) return res.status(400).json({ error: "File edit harus berupa video MP4/WebM/MOV yang didukung FFmpeg." });
     const baseUrl = String(process.env.PUBLIC_BASE_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const job = await createPipelineJob({
       photos,
+      videoFile,
+      customPrompt: req.body.customPrompt,
       productName: req.body.productName,
       style: req.body.style,
       duration: req.body.duration,

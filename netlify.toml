@@ -1,4 +1,4 @@
-[build]
+[build.environment]\n  NODE_VERSION = "22"\n\n[build]
   publish = "public"
   functions = "netlify/functions"
 

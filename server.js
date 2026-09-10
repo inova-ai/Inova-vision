@@ -48,20 +48,40 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/api/health", async (_req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   const blobStorage = await checkBlobConnection();
+  const replicateToken = String(process.env.REPLICATE_API_TOKEN || "").trim();
+  let replicateApiReachable = false;
+  let replicateError = null;
+  if (replicateToken) {
+    try {
+      const rr = await fetch("https://api.replicate.com/v1/account", {
+        headers: { Authorization: `Bearer ${replicateToken}`, Accept: "application/json" }
+      });
+      replicateApiReachable = rr.ok;
+      if (!rr.ok) replicateError = `Replicate HTTP ${rr.status}`;
+    } catch (e) {
+      replicateError = e?.message || "Replicate API tidak dapat dihubungi.";
+    }
+  } else {
+    replicateError = "REPLICATE_API_TOKEN tidak terlihat oleh Netlify Function runtime.";
+  }
   const netlifyBlobs = Boolean(process.env.NETLIFY || process.env.NETLIFY_SITE_ID || process.env.NETLIFY_BLOBS_CONTEXT);
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "5.6.0",
-    configured: Boolean(process.env.REPLICATE_API_TOKEN),
+    version: "5.6.1",
+    configured: Boolean(replicateToken),
+    replicateTokenPresent: Boolean(replicateToken),
+    replicateApiReachable,
+    replicateError,
     webhookSecurity: Boolean(process.env.REPLICATE_WEBHOOK_SECRET),
     blobStorage,
     blobConfigured: blobStorage,
     blobAuthMode: netlifyBlobs ? "netlify-blobs" : "not-detected",
     blobEnvironment: { netlifyRuntime: Boolean(process.env.NETLIFY), netlifySiteId: Boolean(process.env.NETLIFY_SITE_ID) },
     scriptAI: Boolean(process.env.OPENAI_API_KEY),
-    ready: Boolean(process.env.REPLICATE_API_TOKEN) && blobStorage && Boolean(process.env.OPENAI_API_KEY),
+    ready: Boolean(replicateToken) && replicateApiReachable && blobStorage && Boolean(process.env.OPENAI_API_KEY),
     voiceAI: true,
     voiceProvider: "free-edge-tts",
     voiceConfigured: true
@@ -95,7 +115,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "m
     }
     const photos = req.files.photos.filter(f => f.mimetype?.startsWith("image/"));
     if (!photos.length) return res.status(400).json({ error: "File harus berupa gambar produk." });
-    const baseUrl = process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`;
+    const baseUrl = String(process.env.PUBLIC_BASE_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const job = await createPipelineJob({
       photos,
       productName: req.body.productName,

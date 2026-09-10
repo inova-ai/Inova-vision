@@ -1,4 +1,4 @@
-# INOVA VISION AI v5.6.0 — NETLIFY READY
+# INOVA VISION AI v5.6.1 — NETLIFY READY
 
 Versi ini dipindahkan dari Vercel ke Netlify. Tidak membutuhkan Vercel Blob atau @vercel/blob.
 
@@ -13,7 +13,7 @@ Versi ini dipindahkan dari Vercel ke Netlify. Tidak membutuhkan Vercel Blob atau
 Wajib:
 - `OPENAI_API_KEY`
 - `REPLICATE_API_TOKEN`
-- `PUBLIC_BASE_URL` = URL Netlify production, contoh `https://nama-site.netlify.app`
+- `PUBLIC_BASE_URL` = URL Netlify production (opsional; sistem juga mencoba `URL`/`DEPLOY_PRIME_URL`)
 
 Untuk keamanan webhook:
 - `REPLICATE_WEBHOOK_SECRET`

@@ -87,6 +87,38 @@ function promptVideoFilter(prompt="") {
   return filters;
 }
 
+function promptVideoExtras(prompt="") {
+  const p=String(prompt||"").toLowerCase();
+  const filters=[];
+  if(/putar\s*(90|sembilan\s*puluh)|rotate\s*90/.test(p)) filters.push("transpose=1");
+  if(/putar\s*(270|dua\s*ratus\s*tujuh\s*puluh)|rotate\s*270/.test(p)) filters.push("transpose=2");
+  if(/balik\s*vertikal|flip\s*vertical|atas\s*bawah/.test(p)) filters.push("vflip");
+  if(/saturasi\s*tinggi|lebih\s*berwarna|vivid|saturation/.test(p)) filters.push("eq=saturation=1.18");
+  if(/kurangi\s*saturasi|desaturasi|muted/.test(p)) filters.push("eq=saturation=0.75");
+  return filters;
+}
+
+function promptAudioVolume(prompt="") {
+  const p=String(prompt||"").toLowerCase();
+  if(/matikan\s*(audio|suara)|tanpa\s*(audio|suara)|mute|silent/.test(p)) return 0;
+  if(/suara\s*(lebih\s*)?keras|volume\s*(naik|tinggi)|audio\s*(lebih\s*)?keras/.test(p)) return 1.35;
+  if(/suara\s*(lebih\s*)?pelan|volume\s*(turun|rendah)|audio\s*(lebih\s*)?pelan/.test(p)) return 0.65;
+  return 1;
+}
+
+function promptTrim(prompt="", sourceDuration=0) {
+  const p=String(prompt||"").toLowerCase();
+  let start=0, end=sourceDuration||0;
+  const range=p.match(/(?:detik|seconds?)\s*(\d+(?:\.\d+)?)\s*(?:sampai|hingga|ke|-|to)\s*(\d+(?:\.\d+)?)/);
+  if(range){ start=Number(range[1]); end=Number(range[2]); }
+  const startM=p.match(/(?:buang|hapus|potong)\s*(?:\d+(?:\.\d+)?)?\s*detik\s*(?:awal|pertama)/);
+  if(startM){ start=Number((p.match(/(\d+(?:\.\d+)?)\s*detik\s*(?:awal|pertama)/)||[])[1]||0); }
+  const endM=p.match(/(?:buang|hapus|potong)\s*(?:\d+(?:\.\d+)?)?\s*detik\s*(?:akhir|terakhir)/);
+  if(endM && sourceDuration){ const n=Number((p.match(/(\d+(?:\.\d+)?)\s*detik\s*(?:akhir|terakhir)/)||[])[1]||0); end=Math.max(start,sourceDuration-n); }
+  if(sourceDuration) { start=Math.min(Math.max(0,start),Math.max(0,sourceDuration-0.1)); end=Math.min(Math.max(start+0.1,end),sourceDuration); }
+  return {start,end};
+}
+
 function promptVideoSpeed(prompt="") {
   const p=String(prompt||"").toLowerCase();
   const m=p.match(/(?:speed|kecepatan|cepat|slow|lambat)[^0-9]{0,12}(0\.5|0\.75|1\.25|1\.5|2)(?:x)?/);
@@ -285,17 +317,20 @@ async function renderVideoEdit(job){
     await materializeBlob(job.sourceVideo.pathname,inputPath);
     await validateMedia(inputPath,"Video sumber");
     const sourceProbe=await probeMedia(inputPath);
-    const requested=Math.max(1,Number(job.duration)||sourceProbe.duration||15);
-    const outDuration=Math.min(requested,Math.max(1,sourceProbe.duration||requested));
+    const requested=String(job.duration)==="auto" ? sourceProbe.duration : Number(job.duration)||sourceProbe.duration||15;
+    const trim=promptTrim(job.customPrompt,sourceProbe.duration||requested);
+    const outDuration=Math.min(Math.max(0.1,requested),Math.max(0.1,(trim.end-trim.start)||requested));
     const speed=promptVideoSpeed(job.customPrompt);
-    const vfParts=["scale=720:1280:force_original_aspect_ratio=increase","crop=720:1280",...promptVideoFilter(job.customPrompt),"fps=30","format=yuv420p"];
+    const vfParts=["scale=720:1280:force_original_aspect_ratio=increase","crop=720:1280",...promptVideoFilter(job.customPrompt),...promptVideoExtras(job.customPrompt),"fps=30","format=yuv420p"];
     const audioFilters=[];
-    if(speed!==1) audioFilters.push(speed>1?`atempo=${speed}`:`atempo=${speed}`);
-    const args=["-y","-i",inputPath,"-t",String(outDuration),"-vf",vfParts.join(","),"-map","0:v:0"];
+    if(speed!==1) audioFilters.push(`atempo=${speed}`);
+    const volume=promptAudioVolume(job.customPrompt);
+    if(volume!==1 && volume>0) audioFilters.push(`volume=${volume}`);
+    const args=["-y","-ss",String(trim.start),"-i",inputPath,"-t",String(outDuration/speed),"-vf",vfParts.join(","),"-map","0:v:0"]
     if(/tanpa\s*(suara|audio)|mute|silent/.test(String(job.customPrompt||"").toLowerCase())){
       args.push("-an");
     } else {
-      args.push("-map","0:a:0?","-af",audioFilters.length?audioFilters.join(","):"anull");
+      args.push("-map","0:a:0?",...(volume===0?["-an"]:["-af",audioFilters.length?audioFilters.join(","):"anull"]));
     }
     args.push("-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-r","30","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",outputPath);
     await runFfmpeg(args);
@@ -305,7 +340,7 @@ async function renderVideoEdit(job){
     const buffer=await fs.readFile(outputPath);
     if(buffer.length<1024 || buffer.subarray(4,8).toString("ascii")!=="ftyp") throw new Error("Video edit bukan MP4 valid.");
     const blob=await putBlob(`outputs/${job.id}/final.mp4`,buffer,"video/mp4",{cacheControlMaxAge:31536000});
-    return {outputUrl:blob.url,outputPathname:blob.pathname,duration:probe.duration,renderMode:"local-video-edit"};
+    return {outputUrl:blob.url,outputPathname:blob.pathname,duration:probe.duration,renderMode:"local-video-edit",promptApplied:job.customPrompt||""};
   }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 

@@ -1,77 +1,65 @@
-import { getStore } from '@netlify/blobs';
+import { put, get, list } from '@vercel/blob';
 
-const STORE_NAME = process.env.NETLIFY_BLOB_STORE || 'inova-vision-ai';
-
-function store() {
-  // Inside Netlify Functions the SDK can use the injected Blobs context.
-  // If the site context is not injected, explicitly provide the site ID/token
-  // when they are available as environment variables.
-  const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
-  const token = process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_BLOBS_TOKEN;
-  if (siteID && token) return getStore({ name: STORE_NAME, siteID, token });
-  return getStore(STORE_NAME);
-}
-
-function publicBaseUrl() {
-  return String(process.env.PUBLIC_BASE_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || '').replace(/\/$/, '');
-}
+// Vercel Blob adapter. The store must be created in Vercel with PUBLIC access
+// because finished MP4s are delivered directly by the Blob CDN to the browser.
+function token() { return process.env.BLOB_READ_WRITE_TOKEN || undefined; }
+function options(access = 'public') { return { access, ...(token() ? { token: token() } : {}) }; }
 
 export function hasBlobCredentials() {
-  return Boolean(
-    process.env.NETLIFY_BLOBS_CONTEXT ||
-    ((process.env.NETLIFY_SITE_ID || process.env.SITE_ID) &&
-      (process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_BLOBS_TOKEN))
-  );
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 export async function checkBlobConnection() {
   try {
-    await store().list({ prefix: '__health__', paginate: false });
+    await list({ prefix: '__health__', limit: 1, ...(token() ? { token: token() } : {}) });
     return { ok: true, error: null };
   } catch (error) {
     const message = error?.message || String(error);
-    console.error('Netlify Blobs connection check failed:', message);
+    console.error('Vercel Blob connection check failed:', message);
     return { ok: false, error: message };
   }
 }
 
 export function blobPublicUrl(pathname) {
-  // Always use same-origin URLs. PUBLIC_BASE_URL can point at an older
-  // Netlify deploy/domain and would make newly rendered videos load from the
-  // wrong deployment. The current site will route /api/blob to the blob
-  // function.
-  if (!pathname) return null;
-  return `/api/blob?key=${encodeURIComponent(pathname)}`;
+  // Kept for compatibility. New blobs return their real Vercel Blob CDN URL.
+  return pathname ? `/api/blob?key=${encodeURIComponent(pathname)}` : null;
 }
 
-export async function putBlob(pathname, data, contentType, options = {}) {
+export async function putBlob(pathname, data, contentType, optionsExtra = {}) {
   try {
-    const metadata = { contentType, ...(options.metadata || {}) };
-    await store().set(pathname, data, { metadata });
-    const url = blobPublicUrl(pathname);
-    if (!url) throw new Error('PUBLIC_BASE_URL belum dikonfigurasi di Netlify Environment Variables.');
-    return { url, pathname, contentType };
+    const blob = await put(pathname, data, {
+      ...options('public'),
+      contentType,
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: Number(optionsExtra.cacheControlMaxAge || 86400)
+    });
+    return { url: blob.url, pathname: blob.pathname, contentType: blob.contentType || contentType };
   } catch (error) {
-    throw new Error(`Netlify Blobs gagal menyimpan file: ${error?.message || error}`);
+    throw new Error(`Vercel Blob gagal menyimpan file: ${error?.message || error}`);
   }
 }
 
 export async function getBlob(pathname, type = 'arrayBuffer') {
-  return store().get(pathname, { type });
+  const result = await get(pathname, options('public'));
+  if (!result || result.statusCode !== 200 || !result.stream) return null;
+  if (type === 'json') return JSON.parse(await new Response(result.stream).text());
+  if (type === 'text') return await new Response(result.stream).text();
+  return await new Response(result.stream).arrayBuffer();
 }
 
 export async function getBlobUrl(pathname) {
-  return blobPublicUrl(pathname);
+  const result = await get(pathname, options('public'));
+  return result?.blob?.url || null;
 }
 
 export async function readBlobJson(pathname) {
-  try {
-    return await store().get(pathname, { type: 'json' });
-  } catch {
-    return null;
-  }
+  try { return await getBlob(pathname, 'json'); } catch { return null; }
 }
 
 export async function deleteBlob(pathname) {
-  try { await store().delete(pathname); } catch {}
+  try {
+    const { del } = await import('@vercel/blob');
+    await del(pathname, { token: token() });
+  } catch {}
 }

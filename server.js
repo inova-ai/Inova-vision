@@ -126,9 +126,19 @@ app.post("/api/jobs/:id/cancel", async (req, res) => {
 });
 
 
+app.get("/", (_req, res) => {
+  res.sendFile("index.html", { root: "public" });
+});
+
 app.use((req, res, next) => {
   if (req.method === "GET" && !req.path.startsWith("/api/")) return res.sendFile("index.html", { root: "public" });
   return next();
+});
+
+app.use((err, _req, res, _next) => {
+  console.error("INOVA VISION error:", err?.stack || err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: err?.message || "Internal server error" });
 });
 
 export default app;

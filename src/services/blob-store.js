@@ -3,6 +3,12 @@ import { getStore } from '@netlify/blobs';
 const STORE_NAME = process.env.NETLIFY_BLOB_STORE || 'inova-vision-ai';
 
 function store() {
+  // Inside Netlify Functions the SDK can use the injected Blobs context.
+  // If the site context is not injected, explicitly provide the site ID/token
+  // when they are available as environment variables.
+  const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+  const token = process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN;
+  if (siteID && token) return getStore({ name: STORE_NAME, siteID, token });
   return getStore(STORE_NAME);
 }
 
@@ -11,18 +17,21 @@ function publicBaseUrl() {
 }
 
 export function hasBlobCredentials() {
-  // Netlify Blobs is provisioned at the site level; the SDK receives the
-  // site context automatically inside Netlify Functions.
-  return Boolean(process.env.NETLIFY || process.env.NETLIFY_SITE_ID || process.env.NETLIFY_BLOBS_CONTEXT);
+  return Boolean(
+    process.env.NETLIFY_BLOBS_CONTEXT ||
+    ((process.env.NETLIFY_SITE_ID || process.env.SITE_ID) &&
+      (process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN))
+  );
 }
 
 export async function checkBlobConnection() {
   try {
     await store().list({ prefix: '__health__', paginate: false });
-    return true;
+    return { ok: true, error: null };
   } catch (error) {
-    console.error('Netlify Blobs connection check failed:', error?.message || error);
-    return false;
+    const message = error?.message || String(error);
+    console.error('Netlify Blobs connection check failed:', message);
+    return { ok: false, error: message };
   }
 }
 

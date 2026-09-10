@@ -187,24 +187,15 @@ async function refreshHealth() {
   try {
     const r = await fetch(`/api/health?t=${Date.now()}`, { cache: "no-store" });
     const x = await r.json();
-    if (!x.replicateTokenPresent) {
-      engine.textContent = "SET REPLICATE API";
-      renderStep.textContent = "Netlify Function belum melihat REPLICATE_API_TOKEN. Pastikan variable di scope Production/Functions, simpan, lalu Deploy ulang (bukan hanya Clear cache).";
-    } else if (!x.replicateApiReachable) {
-      engine.textContent = "REPLICATE TOKEN ERROR";
-      renderStep.textContent = `Token terbaca, tetapi Replicate menolak/tidak dapat diakses (${x.replicateError || "unknown error"}). Periksa token Replicate.`;
-    } else if (!x.scriptAI) {
-      engine.textContent = "SET OPENAI API";
-      renderStep.textContent = "REPLICATE aktif. Tambahkan OPENAI_API_KEY di Netlify untuk AI creative planning, lalu redeploy.";
-    } else if (!x.blobStorage) {
+    if (!x.blobStorage) {
       engine.textContent = "SET NETLIFY BLOB";
-      renderStep.textContent = "Netlify Blobs belum dapat diakses oleh Function. Pastikan site sudah ter-deploy sebagai Netlify Function.";
-    } else if (x.ready) {
-      engine.textContent = "READY";
-      renderStep.textContent = "Semua layanan utama aktif: OpenAI, Replicate, Netlify Blobs, dan webhook.";
+      renderStep.textContent = "Netlify Blobs belum dapat diakses oleh backend. Pastikan site ter-deploy sebagai Netlify Function.";
+    } else if (x.scriptAI) {
+      engine.textContent = "FREE LOCAL + AI PLAN";
+      renderStep.textContent = "Video dirender lokal tanpa Replicate. OpenAI hanya opsional untuk creative planning.";
     } else {
-      engine.textContent = "CHECK CONFIG";
-      renderStep.textContent = "Konfigurasi belum lengkap. Buka /api/health untuk melihat status tiap layanan.";
+      engine.textContent = "FREE LOCAL READY";
+      renderStep.textContent = "100% video engine lokal: FFmpeg + free Edge TTS + script fallback. Replicate tidak diperlukan.";
     }
   } catch (e) {
     engine.textContent = "HEALTH ERROR";

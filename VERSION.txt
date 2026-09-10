@@ -1,1 +1,2 @@
-5.8.5-free-local
+6.0.0-free-motion
+100% free local product-preserving motion engine using FFmpeg; no paid video API required.

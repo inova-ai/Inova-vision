@@ -1,4 +1,4 @@
-# INOVA VISION v5.8.4
+# INOVA VISION v6.0.0
 
 Netlify Free Local renderer.
 
@@ -11,10 +11,17 @@ Netlify Free Local renderer.
 - MP4 delivery uses the dedicated Netlify Blob function with base64 binary responses and Range/206 support.
 - The browser player uses the same-origin `/api/blob` URL.
 
+## Free Motion Engine
 
-## v5.8.4 render stability
-- Removed ffprobe-only `count_frames`, `select_streams`, and `show_entries` flags from the FFmpeg worker.
-- Media probing now uses the bundled `ffmpeg-static` binary and its normal input probe.
-- Final scene composition always re-encodes to H.264/AAC with normalized timestamps instead of fragile MP4 stream-copy concatenation.
-- Final output is decoded and duration-checked before the job can be marked completed.
-- MP4 remains delivered through the same-origin Blob endpoint with HTTP Range support for Android/Chrome playback.
+This version is designed to run without a paid video-generation API.
+
+- **Video generation cost:** Rp0/API fee.
+- Uses FFmpeg to create subtle camera motion from the original product photo.
+- Ken-Burns trajectories vary per scene: push-in, lateral drift, vertical drift, and a gentle push/pull.
+- The source image is never AI-regenerated, so product shape, packaging, logo and visible text remain much more stable than generative I2V.
+- Output is normalized to H.264/AAC, 30 fps, `yuv420p`, and `+faststart` for Android/Chrome playback.
+- Voice remains on the free local/edge-TTS path already used by the project.
+
+### Important
+
+This is **not generative AI video**. It is the free option that prioritizes product fidelity. It cannot create new hand/object movement like a true I2V model, but it avoids the common AI problem of changing the product between frames.

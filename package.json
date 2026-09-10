@@ -1,6 +1,6 @@
 {
-  "name": "inova-vision-ai-v5.7-free-local",
-  "version": "5.8.5",
+  "name": "inova-vision-free-motion-v6",
+  "version": "6.0.0",
   "private": true,
   "type": "module",
   "scripts": {

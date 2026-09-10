@@ -145,7 +145,13 @@ async function compose(job){
       ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","96k","-movflags","+faststart",finalPath]
       : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","96k","-movflags","+faststart",finalPath];
     await runFfmpeg(args);
-    const blob=await putBlob(`outputs/${job.id}/final.mp4`,await fs.readFile(finalPath),"video/mp4",{cacheControlMaxAge:31536000});
+    // Never mark a job completed with a corrupt/unreadable final MP4.
+    await validateMedia(finalPath,"Video final");
+    const finalBuffer=await fs.readFile(finalPath);
+    if(finalBuffer.length < 1024 || finalBuffer.subarray(4,8).toString("ascii") !== "ftyp") {
+      throw new Error("Video final bukan MP4 valid (header ftyp tidak ditemukan).");
+    }
+    const blob=await putBlob(`outputs/${job.id}/final.mp4`,finalBuffer,"video/mp4",{cacheControlMaxAge:31536000});
     return blob.url;
   } finally {await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }

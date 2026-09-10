@@ -45,6 +45,10 @@ if ("serviceWorker" in navigator) {
   });
 }
 const photos = document.querySelector("#photos");
+const sourceMode = document.querySelector("#sourceMode");
+const videoInput = document.querySelector("#sourceVideo");
+const videoDrop = document.querySelector("#videoDrop");
+const promptInput = document.querySelector("#prompt");
 const thumbs = document.querySelector("#thumbs");
 const productName = document.querySelector("#productName");
 const cta = document.querySelector("#cta");
@@ -69,6 +73,22 @@ document.querySelectorAll("#styles button").forEach(btn => {
     btn.classList.add("active");
     selectedStyle = btn.dataset.style;
   };
+});
+
+function updateSourceMode(){
+  const editVideo=sourceMode?.value==="video";
+  if(videoDrop) videoDrop.hidden=!editVideo;
+  if(document.querySelector("#photoDrop")) document.querySelector("#photoDrop").hidden=editVideo;
+  if(videoInput) videoInput.required=editVideo;
+  if(photos) photos.required=!editVideo;
+}
+sourceMode?.addEventListener("change",updateSourceMode);
+updateSourceMode();
+
+videoInput?.addEventListener("change",()=>{
+  const file=videoInput.files?.[0];
+  if(!file) return;
+  thumbs.innerHTML=`<div class="video-thumb">🎬 ${file.name}</div>`;
 });
 
 photos.onchange = () => {
@@ -104,7 +124,9 @@ async function poll() {
       cancel.hidden = true;
       generate.disabled = false;
       resultBadge.textContent = "COMPLETED";
-      blueprint.textContent = `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · AI shot planning aktif · ${j.productName || "Product"}.`;
+      blueprint.textContent = j.sourceType === "video"
+        ? `Edit video · ${j.duration || duration.value}s · prompt diterapkan: ${j.customPrompt || "auto"} · format 9:16 · MP4 kompatibel Android/Chrome.`
+        : `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · prompt + AI shot planning aktif · ${j.productName || "Product"}.`;
       const videoBox = document.querySelector(".video-box");
       if (j.outputUrl) {
         // Use a real <source> element and force the browser to reload the URL.
@@ -147,7 +169,7 @@ async function poll() {
           dl.rel = "noopener";
           result.querySelector(".result-info").appendChild(dl);
         }
-        dl.href = j.outputUrl;
+        dl.href = `${j.outputUrl}${j.outputUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(j.updatedAt || j.id || Date.now())}`;
         dl.download = `inova-${j.id}.mp4`;
       }
     }
@@ -168,16 +190,23 @@ async function poll() {
 
 generate.onclick = async () => {
   document.querySelector("#downloadVideo")?.remove();
-  if (!photos.files.length) {
+  const editVideo=sourceMode?.value==="video";
+  if(editVideo && !videoInput?.files?.length){
+    setProgress(0, "Video belum ada", "Upload 1 video yang ingin diedit.", "WAITING");
+    return;
+  }
+  if(!editVideo && !photos.files.length){
     setProgress(0, "Foto belum ada", "Upload minimal 1 foto produk.", "WAITING");
     return;
   }
   const fd = new FormData();
-  [...photos.files].slice(0,8).forEach(f => fd.append("photos", f));
+  if(editVideo) fd.append("video", videoInput.files[0]);
+  else [...photos.files].slice(0,8).forEach(f => fd.append("photos", f));
   fd.append("productName", productName.value);
   fd.append("style", selectedStyle);
   fd.append("duration", duration.value);
   fd.append("cta", cta.value);
+  fd.append("customPrompt", promptInput?.value || "");
   if (music.files[0]) fd.append("music", music.files[0]);
 
   generate.disabled = true;

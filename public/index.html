@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>INOVA VISION AI — Photo to Affiliate Video</title>
+  <title>INOVA VISION AI — Photo & Video Editor</title>
   <meta name="theme-color" content="#00e5ff">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -25,8 +25,8 @@
     <section class="hero">
       <div>
         <div class="eyebrow">AI AFFILIATE VIDEO STUDIO · V4</div>
-        <h1>Upload foto.<br><span>Video affiliate tanpa Replicate.</span></h1>
-        <p>Tanpa video referensi. INOVA membaca produk, menyusun konsep, menggerakkan visual, dan menghasilkan video affiliate siap dipakai.</p>
+        <h1>Foto atau video.<br><span>Edit jadi konten siap pakai.</span></h1>
+        <p>INOVA bisa membuat video dari foto produk atau mengedit video yang sudah kamu punya. Gunakan prompt untuk memberi arahan gaya dan perubahan.</p>
       </div>
       <div class="hero-card">
         <div class="mini-label">AUTOMATIC CREATIVE</div>
@@ -37,14 +37,22 @@
 
     <section class="studio">
       <div class="panel">
+        <div class="panel-head"><div><small>00</small><h2>Mode Input</h2></div><span>PHOTO / VIDEO</span></div>
+        <label class="field"><span>Sumber konten</span><select id="sourceMode"><option value="photo" selected>Foto → Video Affiliate</option><option value="video">Edit Video → Video Final</option></select></label>
         <div class="panel-head"><div><small>01</small><h2>Product Photos</h2></div><span>MAX 8</span></div>
-        <label class="drop" id="drop">
+        <label class="drop" id="photoDrop">
           <input id="photos" type="file" accept="image/*" multiple>
           <div class="upload-icon">＋</div>
           <strong>Tarik foto ke sini</strong>
           <span>atau klik untuk upload · JPG, PNG, WEBP</span>
         </label>
         <div id="thumbs" class="thumbs"></div>
+        <label class="drop video-drop" id="videoDrop" hidden>
+          <input id="sourceVideo" type="file" accept="video/mp4,video/webm,video/quicktime,video/*">
+          <div class="upload-icon">🎬</div>
+          <strong>Pilih video yang ingin diedit</strong>
+          <span>MP4 / WEBM / MOV · maksimal 3 MB</span>
+        </label>
         <label class="field"><span>Nama produk <small>opsional</small></span><input id="productName" placeholder="Contoh: Serum Brightening 30ml"></label>
       </div>
 
@@ -62,6 +70,7 @@
           <label class="field"><span>Durasi</span><select id="duration"><option value="5">5 detik</option><option value="10">10 detik</option><option value="15" selected>15 detik</option><option value="30">30 detik</option><option value="60">60 detik</option><option value="90">90 detik</option><option value="120">2 menit</option></select></label>
           <label class="field"><span>Format</span><select id="format"><option value="9:16" selected>9:16 · Reels / TikTok</option></select></label>
         </div>
+        <label class="field"><span>Prompt / instruksi edit <small>opsional</small></span><textarea id="prompt" rows="5" placeholder="Contoh: buat opening lebih menarik, zoom perlahan ke produk, lebih terang, cinematic, pertahankan logo dan teks tetap jelas."></textarea></label>
         <label class="field"><span>CTA affiliate <small>opsional</small></span><input id="cta" placeholder="Cek produknya sekarang"></label>
         <label class="field"><span>Musik background <small>opsional · MP3/WAV</small></span><input id="music" type="file" accept="audio/mpeg,audio/wav,audio/*"></label>
         <div class="tag-row" style="margin-top:12px"><span>🇮🇩 AI SCRIPT + VOICE READY</span><span>AUTO SUBTITLE</span><span>CTA</span></div>
@@ -73,7 +82,7 @@
         <div class="render-copy"><b id="renderTitle">Siap membuat video</b><span id="renderStep">Upload foto produk untuk memulai.</span></div>
         <div class="progress"><i id="bar"></i></div>
         <button id="generate" class="generate">✦ Generate AI Affiliate Video</button>
-        <div class="small-note">AI akan memilih foto terbaik per scene, membuat shot plan, menghidupkan foto dengan AI image-to-video sambil menjaga identitas produk, lalu melakukan finishing MP4. Jika AI gagal, local motion fallback tetap berjalan.</div>
+        <div class="small-note">Untuk foto: AI membuat storyboard + motion lokal yang menjaga produk tetap stabil. Untuk video: INOVA mengedit video sumber dengan prompt, format 9:16, warna, ketajaman, mirror, speed, dan audio. Hasil selalu melewati compatibility check MP4 agar tidak tampil 0:00.</div>
         <button id="cancel" class="cancel" hidden>Batalkan Render</button>
       </div>
     </section>

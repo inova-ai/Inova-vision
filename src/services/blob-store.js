@@ -7,7 +7,7 @@ function store() {
 }
 
 function publicBaseUrl() {
-  return String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  return String(process.env.PUBLIC_BASE_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || '').replace(/\/$/, '');
 }
 
 export function hasBlobCredentials() {

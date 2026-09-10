@@ -1,6 +1,11 @@
 import Replicate from "replicate";
 let client;
-function getClient() { if (!process.env.REPLICATE_API_TOKEN) throw new Error("REPLICATE_API_TOKEN belum diisi."); client ||= new Replicate({ auth: process.env.REPLICATE_API_TOKEN }); return client; }
+function getClient() {
+  const token = String(process.env.REPLICATE_API_TOKEN || "").trim();
+  if (!token) throw new Error("REPLICATE_API_TOKEN tidak terlihat oleh Netlify Function runtime. Pastikan Environment Variable tersedia untuk Production/Functions lalu redeploy.");
+  client ||= new Replicate({ auth: token });
+  return client;
+}
 export async function cancelPrediction(predictionId) { return getClient().predictions.cancel(predictionId); }
 export async function createScenePrediction({ imageUrl, imageDataUri, prompt, duration, webhookUrl, sceneNumber, jobId, audioUrl }) {
   const replicate = getClient();

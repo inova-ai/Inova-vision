@@ -17,9 +17,6 @@ import ffmpegPath from "ffmpeg-static";
 const TMP_ROOT = "/tmp/inova-vision";
 async function jobTmp(id){const dir=path.join(TMP_ROOT,id);await fs.mkdir(dir,{recursive:true});return dir;}
 function runFfmpeg(args){return new Promise((resolve,reject)=>{const ff=spawn(ffmpegPath,args);let err="";ff.stderr.on("data",d=>err+=d.toString());ff.on("close",c=>c===0?resolve():reject(new Error(`FFmpeg gagal: ${err.slice(-1800)}`)));ff.on("error",e=>reject(e));});}
-function escapeDraw(s){return String(s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/:/g,"\\:").replace(/,/g,"\\,").replace(/\[/g,"\\[").replace(/\]/g,"\\]").replace(/\n/g,"\\n");}
-function wrap(s,max=30){const words=String(s||"").trim().split(/\s+/);const out=[];let line="";for(const w of words){if((line+" "+w).trim().length>max&&line){out.push(line);line=w;}else line=(line?line+" ":"")+w;}if(line)out.push(line);return out.slice(0,3).join("\n");}
-
 async function downloadFile(url,target){
   const r=await fetch(url);
   if(!r.ok) throw new Error(`Gagal mengambil media: HTTP ${r.status}`);
@@ -128,20 +125,12 @@ async function compose(job){
     try{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c","copy","-movflags","+faststart",silentPath]);}
     catch{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","96k","-movflags","+faststart",silentPath]);}
 
-    const filters=[];let cursor=0;
-    for(const sc of job.scenes){
-      const start=cursor,end=cursor+Number(sc.duration||5);
-      const txt=escapeDraw(wrap(sc.script||sc.title));
-      filters.push(`drawbox=x=24:y=h-265:w=w-48:h=205:color=black@0.62:t=fill:enable='between(t,${start},${end})'`);
-      filters.push(`drawtext=font='DejaVu Sans':text='${txt}':fontcolor=white:fontsize=38:line_spacing=9:x=(w-text_w)/2:y=h-225:enable='between(t,${start},${end})'`);
-      cursor=end;
-    }
-    if(job.cta?.trim()){
-      const start=Math.max(0,job.duration-3);const txt=escapeDraw(wrap(job.cta.trim(),34));
-      filters.push(`drawbox=x=30:y=h-145:w=w-60:h=100:color=black@0.9:t=fill:enable='gte(t,${start})'`);
-      filters.push(`drawtext=font='DejaVu Sans':text='${txt}':fontcolor=white:fontsize=34:line_spacing=7:x=(w-text_w)/2:y=h-118:enable='gte(t,${start})'`);
-    }
-    const vf=filters.join(",");
+    // IMPORTANT: the Netlify ffmpeg-static binary used by this app does not
+    // include the drawtext filter. Do not add drawtext/drawbox here: doing so
+    // makes the final compose fail with "No such filter: drawtext".
+    // Subtitles/CTA remain available as metadata for the UI, while the video
+    // render itself uses only universally available scale/crop/format filters.
+    const vf="format=yuv420p";
     let music=null;
     if(job.musicUrl || job.musicPathname){
       music=path.join(dir,"music"+path.extname(job.musicName||".mp3"));
@@ -206,7 +195,7 @@ export async function processPipelineJob(jobId){
       await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · local-free`,status:i+1===job.sceneCount?"composing":"rendering"});
     }
     job=await getJob(jobId);
-    await updateJob(jobId,{status:"composing",progress:92,step:"Menyusun video final · subtitle + CTA + audio"});
+    await updateJob(jobId,{status:"composing",progress:92,step:"Menyusun video final · audio + video"});
     const finalUrl=await compose(await getJob(jobId));
     return updateJob(jobId,{status:"completed",progress:100,step:"Video final selesai · 100% local/free renderer",outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:"local-free",engine:"local-free"});
   }catch(e){

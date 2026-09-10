@@ -1,9 +1,11 @@
-# INOVA VISION v5.8.0
+# INOVA VISION v5.8.1
 
-FFmpeg compatibility fix for Netlify.
+Netlify Free Local renderer.
 
-- Removes all `drawtext` and `drawbox` filters from final composition because the deployed `ffmpeg-static` binary reports `No such filter: drawtext`.
-- Final compose now uses only `format=yuv420p` for video filtering, plus the existing audio mixing path.
-- No Replicate webhook or `processWebhook` export is used.
-- Source photos/audio are materialized from Netlify Blobs and validated before rendering.
-- Subtitles/CTA text remain in the job data/UI but are not burned into the MP4 by FFmpeg.
+## v5.8.1 blank-video fix
+- Scene rendering no longer uses `zoompan`.
+- Uploaded photos are looped directly into 720x1280 video frames using a simple scale/crop/fps filter.
+- This avoids MP4 files that finish successfully but contain invisible/blank video frames on some ffmpeg-static builds.
+- `drawtext` and `drawbox` remain disabled because the deployed ffmpeg-static build does not provide those filters.
+- Netlify Blobs are materialized directly for uploaded photos, voice and music.
+- No Replicate dependency or webhook.

@@ -31,10 +31,68 @@ export async function startScene(job, sceneIndex){
   const shotPrompt=`${job.prompt} Scene ${scene.scene}/${scene.title}: ${scene.direction}
 SHOT PLAN: shot type ${shot.shotType||"hero"}; camera movement ${shot.cameraMovement||"slow push-in"}; composition ${shot.composition||"product centered and fully visible"}; lighting ${shot.lighting||"clean commercial lighting"}; pacing ${shot.pacing||"clear product emphasis"}.
 Execute only realistic camera motion. Preserve exact product identity, shape, colors, branding placement and visible details. Do not morph, duplicate, replace or redesign the product.`;
-  const prediction=await createScenePrediction({imageUrl:selected.imageUrl || job.imageUrl,imageDataUri:selected.imageDataUri || job.imageDataUri,prompt:shotPrompt,duration:scene.duration,webhookUrl,sceneNumber:sceneIndex,jobId:job.id,audioUrl:voice?.url||null});
-  job.scenes[sceneIndex]={...job.scenes[sceneIndex],predictionId:prediction.id,voice,status:"generating",progress:20,attempt:(job.scenes[sceneIndex].attempt||0)+1};
-  await updateJob(job.id,{status:"generating",step:`Generating scene ${sceneIndex+1}/${job.sceneCount} · foto #${(scene.imageIndex ?? 0)+1} · ${scene.shot?.cameraMovement || "camera motion"}`,progress:Math.round((job.scenes.filter(s=>s.status==="completed").length/job.sceneCount)*80)+10,scenes:job.scenes});
-  await putBlob(`indexes/prediction-${prediction.id}.json`,JSON.stringify({jobId:job.id,sceneIndex}),"application/json",{cacheControlMaxAge:86400});
+  try {
+    const prediction=await createScenePrediction({imageUrl:selected.imageUrl || job.imageUrl,imageDataUri:selected.imageDataUri || job.imageDataUri,prompt:shotPrompt,duration:scene.duration,webhookUrl,sceneNumber:sceneIndex,jobId:job.id,audioUrl:voice?.url||null});
+    job.scenes[sceneIndex]={...job.scenes[sceneIndex],predictionId:prediction.id,voice,status:"generating",progress:20,attempt:(job.scenes[sceneIndex].attempt||0)+1};
+    await updateJob(job.id,{status:"generating",step:`Generating scene ${sceneIndex+1}/${job.sceneCount} · foto #${(scene.imageIndex ?? 0)+1} · ${scene.shot?.cameraMovement || "camera motion"}`,progress:Math.round((job.scenes.filter(s=>s.status==="completed").length/job.sceneCount)*80)+10,scenes:job.scenes});
+    await putBlob(`indexes/prediction-${prediction.id}.json`,JSON.stringify({jobId:job.id,sceneIndex}),"application/json",{cacheControlMaxAge:86400});
+  } catch (error) {
+    // Replicate returns HTTP 402 when the account has no usable credit.
+    // Do not leave the whole job stuck in "failed": render a deterministic
+    // local fallback scene from the uploaded product image + voice instead.
+    if (isReplicateCreditError(error)) {
+      console.warn("Replicate credit unavailable; using local fallback renderer.");
+      await renderFallbackScene(job, sceneIndex, selected, voice);
+      return;
+    }
+    throw error;
+  }
+}
+
+function isReplicateCreditError(error) {
+  const status = Number(error?.status || error?.response?.status || error?.statusCode || 0);
+  const message = String(error?.message || error?.detail || "").toLowerCase();
+  return status === 402 || (message.includes("insufficient credit") && message.includes("replicate"));
+}
+
+async function renderFallbackScene(job, sceneIndex, selected, voice) {
+  const dir = await jobTmp(job.id);
+  const imagePath = path.join(dir, `fallback-image-${sceneIndex}.jpg`);
+  const voicePath = voice?.url ? path.join(dir, `fallback-voice-${sceneIndex}.mp3`) : null;
+  const scenePath = path.join(dir, `scene-${sceneIndex}-fallback.mp4`);
+  const imageUrl = selected.imageUrl || job.imageUrl;
+  if (!imageUrl) throw new Error("Foto produk tidak tersedia untuk fallback renderer.");
+  await downloadFile(imageUrl, imagePath);
+  if (voicePath) await downloadFile(voice.url, voicePath);
+  const duration = Math.max(1, Number(job.scenes[sceneIndex]?.duration || 5));
+  const fps = 30;
+  const frames = Math.max(1, Math.round(duration * fps));
+  const vf = `scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,zoompan=z='min(zoom+0.0008,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1280x720:fps=${fps},format=yuv420p`;
+  let args;
+  if (voicePath) {
+    args = ["-y", "-loop", "1", "-i", imagePath, "-i", voicePath, "-vf", vf, "-t", String(duration), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", scenePath];
+  } else {
+    args = ["-y", "-loop", "1", "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-i", imagePath, "-vf", vf, "-t", String(duration), "-map", "1:v:0", "-map", "0:a:0", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", scenePath];
+  }
+  await runFfmpeg(args);
+  const sceneBlob = await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`, await fs.readFile(scenePath), "video/mp4", {cacheControlMaxAge:86400});
+  await fs.rm(dir, {recursive:true, force:true});
+
+  const scenes = [...job.scenes];
+  scenes[sceneIndex] = {...scenes[sceneIndex], status:"completed", progress:100, outputUrl:sceneBlob.url, voice, renderMode:"local-fallback", fallbackReason:"Replicate HTTP 402 insufficient credit"};
+  const next = sceneIndex + 1;
+  if (next < job.sceneCount) {
+    await updateJob(job.id, {scenes, status:"generating", progress:Math.round(((sceneIndex+1)/job.sceneCount)*85), step:`Scene ${sceneIndex+1}/${job.sceneCount} selesai · Replicate tidak memiliki kredit · memulai scene ${next+1}/${job.sceneCount}`});
+    await startScene(await getJob(job.id), next);
+    return;
+  }
+  await updateJob(job.id, {scenes, status:"composing", progress:92, step:"Replicate credit tidak tersedia · menyusun video dengan local fallback renderer"});
+  try {
+    const finalUrl = await compose(await getJob(job.id));
+    await updateJob(job.id, {status:"completed", progress:100, step:"Video final selesai · local fallback renderer + subtitle burn-in + CTA + audio", outputUrl:finalUrl, completedAt:new Date().toISOString(), renderMode:"local-fallback"});
+  } catch (error) {
+    await updateJob(job.id, {status:"failed", progress:0, step:`Fallback renderer gagal: ${error.message}`});
+  }
 }
 async function downloadFile(url,target){const r=await fetch(url);if(!r.ok)throw new Error(`Gagal mengambil output scene: HTTP ${r.status}`);await fs.writeFile(target,Buffer.from(await r.arrayBuffer()));}
 

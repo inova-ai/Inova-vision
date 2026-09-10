@@ -24,7 +24,7 @@
   to = "/index.html"
   status = 200
 
-[functions."process-job-background"]
+[functions."process-job"]
   background = true
   included_files = ["src/**", "public/**"]
 

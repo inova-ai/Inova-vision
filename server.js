@@ -134,7 +134,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "m
     // returns immediately. This prevents long AI/FFmpeg work from turning a
     // successfully-created job into a frontend "Gagal membuat job" timeout.
     try {
-      const workerUrl = `${baseUrl}/.netlify/functions/process-job-background`;
+      const workerUrl = `${baseUrl}/.netlify/functions/process-job`;
       const workerResponse = await fetch(workerUrl, {
         method: "POST",
         headers: { "content-type": "application/json", "cache-control": "no-cache" },

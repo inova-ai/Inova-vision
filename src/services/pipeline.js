@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { updateJob, getJob } from "./job-store.js";
+import { saveJob, updateJob, getJob } from "./job-store.js";
 import { buildCreativePrompt, buildStoryboard, buildSceneScript } from "./creative-engine.js";
 import { createScenePrediction, cancelPrediction } from "./replicate-video.js";
 import { generateCreativePlan } from "./ai-script.js";

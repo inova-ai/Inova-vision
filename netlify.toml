@@ -23,3 +23,6 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+[functions."process-job-background"]
+  included_files = ["src/**", "public/**"]

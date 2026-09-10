@@ -67,7 +67,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "5.6.7",
+    version: "5.6.8",
     configured: Boolean(replicateToken),
     replicateTokenPresent: Boolean(replicateToken),
     replicateApiReachable,
@@ -130,7 +130,21 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "m
       musicFile: req.files.music?.[0] || null,
       baseUrl
     });
-    res.status(202).json({ job });
+    // Start rendering in a Netlify Background Function so the upload request
+    // returns immediately. This prevents long AI/FFmpeg work from turning a
+    // successfully-created job into a frontend "Gagal membuat job" timeout.
+    try {
+      const workerUrl = `${baseUrl}/.netlify/functions/process-job-background`;
+      const workerResponse = await fetch(workerUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jobId: job.id })
+      });
+      if (!workerResponse.ok) console.warn("Background worker trigger returned", workerResponse.status);
+    } catch (workerError) {
+      console.warn("Background worker trigger failed:", workerError?.message || workerError);
+    }
+    res.status(202).json({ job: await getJob(job.id) });
   } catch (e) {
     console.error("Create job error", e);
     res.status(500).json({ error: e.message || "Gagal membuat job." });

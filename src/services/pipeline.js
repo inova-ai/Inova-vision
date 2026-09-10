@@ -72,6 +72,32 @@ async function probeMedia(filePath){
   });
 }
 
+function promptVideoFilter(prompt="") {
+  const p=String(prompt||"").toLowerCase();
+  const filters=[];
+  if(/hitam\s*putih|black\s*and\s*white|grayscale|grayscale/.test(p)) filters.push("hue=s=0");
+  if(/lebih\s*terang|bright|brightness/.test(p)) filters.push("eq=brightness=0.08:contrast=1.04");
+  if(/lebih\s*gelap|dark|moody/.test(p)) filters.push("eq=brightness=-0.06:contrast=1.05");
+  if(/kontras|contrast/.test(p)) filters.push("eq=contrast=1.12");
+  if(/tajam|sharp|sharpen/.test(p)) filters.push("unsharp=5:5:0.6:5:5:0.0");
+  if(/mirror|flip\s*horizontal|cermin/.test(p)) filters.push("hflip");
+  if(/vintage|retro/.test(p)) filters.push("eq=saturation=0.82:contrast=1.05");
+  if(/cinematic|film/.test(p)) filters.push("eq=contrast=1.08:saturation=0.92");
+  if(/vignette/.test(p)) filters.push("vignette=PI/5");
+  return filters;
+}
+
+function promptVideoSpeed(prompt="") {
+  const p=String(prompt||"").toLowerCase();
+  const m=p.match(/(?:speed|kecepatan|cepat|slow|lambat)[^0-9]{0,12}(0\.5|0\.75|1\.25|1\.5|2)(?:x)?/);
+  if(m) return Number(m[1]);
+  if(/2x|dua kali|sangat cepat/.test(p)) return 2;
+  if(/1\.5x|lebih cepat/.test(p)) return 1.5;
+  if(/0\.5x|setengah kecepatan|sangat lambat/.test(p)) return 0.5;
+  if(/0\.75x|sedikit lambat|slow motion|lambat/.test(p)) return 0.75;
+  return 1;
+}
+
 function motionFilter(sceneIndex, duration){
   const fps=30;
   const frames=Math.max(30,Math.round(duration*fps));
@@ -189,8 +215,8 @@ async function renderAiScene(job, sceneIndex){
     const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
     const hasVoice=Boolean(voice&&(voice.pathname||voice.url));
     const args=hasVoice
-      ? ["-y","-i",aiPath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration},atrim=0:${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath]
-      : ["-y","-i",aiPath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath];
+      ? ["-y","-i",aiPath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration},atrim=0:${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath]
+      : ["-y","-i",aiPath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath];
     await runFfmpeg(args);
     await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
     const probe=await probeMedia(scenePath);
@@ -231,11 +257,12 @@ async function renderLocalScene(job, sceneIndex){
     // single-frame input. FFmpeg could therefore create a technically valid
     // MP4 containing only one video frame, which Android displayed as 0:00.
     // Keep the video input first and loop it explicitly for the full duration.
-    const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,${motionFilter(sceneIndex,duration)},format=yuv420p`;
+    const extraPromptFilters=promptVideoFilter(job.customPrompt);
+    const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,${motionFilter(sceneIndex,duration)}${extraPromptFilters.length?","+extraPromptFilters.join(","):""},format=yuv420p`;
     const hasVoice=Boolean(voice && (voice.pathname || voice.url));
     const args=hasVoice
-      ? ["-y","-loop","1","-framerate","30","-i",imagePath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath]
-      : ["-y","-loop","1","-framerate","30","-i",imagePath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath];
+      ? ["-y","-loop","1","-framerate","30","-i",imagePath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath]
+      : ["-y","-loop","1","-framerate","30","-i",imagePath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath];
     await runFfmpeg(args);
     await validateMedia(scenePath,`Video scene ${sceneIndex+1}`);
     const probe=await probeMedia(scenePath);
@@ -247,6 +274,39 @@ async function renderLocalScene(job, sceneIndex){
   } finally {
     await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});
   }
+}
+
+async function renderVideoEdit(job){
+  if(!job.sourceVideo?.pathname) throw new Error("Video sumber tidak ditemukan.");
+  const dir=await jobTmp(job.id);
+  const inputPath=path.join(dir,"source-video");
+  const outputPath=path.join(dir,"edited.mp4");
+  try{
+    await materializeBlob(job.sourceVideo.pathname,inputPath);
+    await validateMedia(inputPath,"Video sumber");
+    const sourceProbe=await probeMedia(inputPath);
+    const requested=Math.max(1,Number(job.duration)||sourceProbe.duration||15);
+    const outDuration=Math.min(requested,Math.max(1,sourceProbe.duration||requested));
+    const speed=promptVideoSpeed(job.customPrompt);
+    const vfParts=["scale=720:1280:force_original_aspect_ratio=increase","crop=720:1280",...promptVideoFilter(job.customPrompt),"fps=30","format=yuv420p"];
+    const audioFilters=[];
+    if(speed!==1) audioFilters.push(speed>1?`atempo=${speed}`:`atempo=${speed}`);
+    const args=["-y","-i",inputPath,"-t",String(outDuration),"-vf",vfParts.join(","),"-map","0:v:0"];
+    if(/tanpa\s*(suara|audio)|mute|silent/.test(String(job.customPrompt||"").toLowerCase())){
+      args.push("-an");
+    } else {
+      args.push("-map","0:a:0?","-af",audioFilters.length?audioFilters.join(","):"anull");
+    }
+    args.push("-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-r","30","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",outputPath);
+    await runFfmpeg(args);
+    await validateMedia(outputPath,"Video hasil edit");
+    const probe=await probeMedia(outputPath);
+    if(probe.duration<Math.max(0.5,outDuration*0.8) || probe.videoFrames<2) throw new Error(`Video edit tidak lengkap: ${probe.duration.toFixed(2)}s, ${probe.videoFrames} frame.`);
+    const buffer=await fs.readFile(outputPath);
+    if(buffer.length<1024 || buffer.subarray(4,8).toString("ascii")!=="ftyp") throw new Error("Video edit bukan MP4 valid.");
+    const blob=await putBlob(`outputs/${job.id}/final.mp4`,buffer,"video/mp4",{cacheControlMaxAge:31536000});
+    return {outputUrl:blob.url,outputPathname:blob.pathname,duration:probe.duration,renderMode:"local-video-edit"};
+  }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
 async function compose(job){
@@ -270,7 +330,7 @@ async function compose(job){
     // different time bases/FPS from one scene to another; stream-copy concat
     // can produce an MP4 that is technically present but reports 0:00 or
     // fails to seek on Android Chrome.
-    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-r","30","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",silentPath]);
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-map","0:v:0","-map","0:a:0?","-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-r","30","-vsync","cfr","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",silentPath]);
 
     // IMPORTANT: the Netlify ffmpeg-static binary used by this app does not
     // include the drawtext filter. Do not add drawtext/drawbox here: doing so
@@ -286,8 +346,8 @@ async function compose(job){
     }
     const volume=Math.min(1,Math.max(0,Number(process.env.MUSIC_VOLUME||0.10)));
     const args=music
-      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath]
-      : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath];
+      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",finalPath]
+      : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",finalPath];
     await runFfmpeg(args);
     // Never mark a job completed with a corrupt, zero-frame, or near-zero
     // duration final MP4.
@@ -305,18 +365,26 @@ async function compose(job){
   } finally {await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
-export async function createPipelineJob({photos,musicFile,productName,style,duration,cta,baseUrl}){
+export async function createPipelineJob({photos=[],videoFile=null,musicFile,productName,style,duration,cta,customPrompt="",baseUrl}){
   const id=crypto.randomUUID();
-  const total=Number(duration)||15;
+  let total=Number(duration)||15;
+  const sourceType=videoFile ? "video" : "photo";
   const storyboard=buildStoryboard({productName,style,duration:total});
-  const prompt=buildCreativePrompt({productName,style,duration:total,cta});
+  const prompt=buildCreativePrompt({productName,style,duration:total,cta,customPrompt,sourceType});
   const photoRecords=[];
-  for(const [i,photo] of photos.entries()){
-    const ext=path.extname(photo.originalname||"").toLowerCase()||".jpg";
-    const blob=await putBlob(`uploads/${id}/product-${i}${ext}`,photo.buffer,photo.mimetype||"image/jpeg",{cacheControlMaxAge:86400});
-    photoRecords.push({imageUrl:blob.url,imagePath:blob.pathname,imageDataUri:null,name:photo.originalname||""});
+  let sourceVideo=null;
+  if(videoFile){
+    const ext=path.extname(videoFile.originalname||"").toLowerCase()||".mp4";
+    const blob=await putBlob(`uploads/${id}/source-video${ext}`,videoFile.buffer,videoFile.mimetype||"video/mp4",{cacheControlMaxAge:86400});
+    sourceVideo={url:blob.url,pathname:blob.pathname,name:videoFile.originalname||"source-video"};
+  } else {
+    for(const [i,photo] of photos.entries()){
+      const ext=path.extname(photo.originalname||"").toLowerCase()||".jpg";
+      const blob=await putBlob(`uploads/${id}/product-${i}${ext}`,photo.buffer,photo.mimetype||"image/jpeg",{cacheControlMaxAge:86400});
+      photoRecords.push({imageUrl:blob.url,imagePath:blob.pathname,imageDataUri:null,name:photo.originalname||""});
+    }
   }
-  const scripts=await generateCreativePlan({productName,style,cta,storyboard,imageDataUris:[],imageUrls:photoRecords.map(x=>x.imageUrl),sourcePhotoCount:photoRecords.length});
+  const scripts=sourceType==="video" ? [] : await generateCreativePlan({productName,style,cta,customPrompt,storyboard,imageDataUris:[],imageUrls:photoRecords.map(x=>x.imageUrl),sourcePhotoCount:photoRecords.length});
   let musicUrl=null;
   let musicPathname=null;
   if(musicFile?.buffer){
@@ -327,11 +395,13 @@ export async function createPipelineJob({photos,musicFile,productName,style,dura
   }
   const job={
     id,status:"queued",progress:3,step:"Job dibuat · Free Motion Engine siap merender",
-    productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",prompt,
-    storyboard,sceneCount:storyboard.length,musicUrl,musicPathname,musicName:musicFile?.originalname||"",
-    imageUrl:photoRecords[0]?.imageUrl,imageDataUri:null,sourcePhotoCount:photos.length,photos:photoRecords,
-    scenes:storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0,renderMode:"local-free-motion"})),
-    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:"local-free-motion"
+    productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",customPrompt:String(customPrompt||""),prompt,sourceType,
+    storyboard,sceneCount:sourceType==="video"?1:storyboard.length,musicUrl,musicPathname,musicName:musicFile?.originalname||"",
+    imageUrl:photoRecords[0]?.imageUrl,imageDataUri:null,sourcePhotoCount:photos.length,photos:photoRecords,sourceVideo,
+    scenes:sourceType==="video"
+      ? [{scene:1,title:"Video Edit",duration:total,status:"queued",progress:0,script:"",imageIndex:0,shot:null,attempt:0,renderMode:"local-video-edit"}]
+      : storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0,renderMode:"local-free-motion"})),
+    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:sourceType==="video"?"local-video-edit":"local-free-motion"
   };
   await saveJob(job);return getJob(id);
 }
@@ -342,6 +412,11 @@ export async function processPipelineJob(jobId){
   if(job.status==="completed") return job;
   await updateJob(jobId,{status:"rendering",progress:5,step:`Free Motion Engine · ${job.sceneCount} scene`});
   try{
+    if(job.sourceType==="video"){
+      await updateJob(jobId,{status:"rendering",progress:30,step:"Mengedit video sumber · menerapkan prompt dan format 9:16"});
+      const edited=await renderVideoEdit(job);
+      return updateJob(jobId,{status:"completed",progress:100,step:"Video edit selesai · MP4 siap diputar",outputUrl:edited.outputUrl,completedAt:new Date().toISOString(),renderMode:"local-video-edit",engine:"local-video-edit",duration:edited.duration});
+    }
     for(let i=0;i<job.sceneCount;i++){
       job=await getJob(jobId);
       if(job.status==="failed") throw new Error(job.step||"Job gagal.");

@@ -25,12 +25,14 @@ const styles = {
   }
 };
 
-export function buildCreativePrompt({ style = "ugc", productName = "", duration = 8, cta = "" }) {
+export function buildCreativePrompt({ style = "ugc", productName = "", duration = 8, cta = "", customPrompt = "", sourceType = "photo" }) {
   const preset = styles[style] || styles.ugc;
   const product = productName?.trim() || "the uploaded product";
 
   return [
-    `Create a ${duration}-second vertical social-commerce product video using the supplied product image as the visual source.`,
+    sourceType === "video"
+      ? `Edit the supplied source video into a ${duration}-second vertical social-commerce video while preserving the original subject and important visual details.`
+      : `Create a ${duration}-second vertical social-commerce product video using the supplied product image as the visual source.`,
     `Product: ${product}.`,
     `Creative style: ${preset.label}.`,
     preset.prompt + ".",
@@ -39,6 +41,7 @@ export function buildCreativePrompt({ style = "ugc", productName = "", duration 
     "Use a strong opening visual, then a sequence of attractive product-focused camera movements and close-ups.",
     cta?.trim() ? `End with a clear affiliate call-to-action concept: ${cta.trim()}.` : "End with a natural affiliate call-to-action concept.",
     "No celebrity likeness, no real-person impersonation, no copyrighted source-video recreation.",
+    customPrompt?.trim() ? `User edit direction: ${customPrompt.trim()}.` : "",
     "Output should feel native to TikTok/Reels/Shorts and visually polished."
   ].join(" ");
 }

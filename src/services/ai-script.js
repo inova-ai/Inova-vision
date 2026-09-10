@@ -28,7 +28,7 @@ const fallbackShot = (scene, style) => {
   return {shotType:p[0],cameraMovement:p[1],composition:p[2],lighting:p[3],pacing:p[4],style};
 };
 
-export async function generateCreativePlan({ productName, style, cta, storyboard, imageDataUris=[], imageUrls=[], sourcePhotoCount=1 }) {
+export async function generateCreativePlan({ productName, style, cta, customPrompt="", storyboard, imageDataUris=[], imageUrls=[], sourcePhotoCount=1 }) {
   const fallback = storyboard.map((scene,i)=>({
     script:fallbackScript({productName,cta,scene}),
     imageIndex:Math.min(i,sourcePhotoCount-1),
@@ -50,7 +50,7 @@ Untuk setiap scene tentukan:
 - lighting: gaya pencahayaan realistis sesuai produk
 - pacing: tujuan ritme scene
 Gunakan gerakan kamera yang realistis dan sederhana; jangan meminta kamera bergerak menembus produk. Produk harus tetap sama, logo/teks tidak berubah.
-Style: ${style}. Produk: ${productName||"produk pada foto"}. CTA: ${cta||"ajak cek produk di keranjang"}.
+Style: ${style}. Produk: ${productName||"produk pada foto"}. Instruksi pengguna: ${customPrompt||"tidak ada"}. CTA: ${cta||"ajak cek produk di keranjang"}.
 Scene: ${storyboard.map((s,i)=>`${i}: ${s.title} — ${s.direction}`).join(" | ")}
 Balas JSON VALID persis {"scenes":[{"script":"","imageIndex":0,"shotType":"","cameraMovement":"","composition":"","lighting":"","pacing":""}]} dengan ${storyboard.length} item.`;
 

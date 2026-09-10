@@ -55,17 +55,22 @@ async function validateMedia(filePath,label){
 }
 
 async function probeMedia(filePath){
+  // This project ships ffmpeg-static, not ffprobe-static.  Do not pass
+  // ffprobe-only flags (count_frames/show_entries/select_streams) to ffmpeg.
+  // FFmpeg can report container duration through its normal input probe, and
+  // validateMedia() below actually decodes the media, which is the important
+  // check for a playable output.
   return new Promise((resolve,reject)=>{
-    const ff=spawn(ffmpegPath,["-v","error","-count_frames","-select_streams","v:0","-show_entries","stream=nb_read_frames,duration","-of","json","-i",filePath]);
-    let out="",err="";
-    ff.stdout.on("data",d=>out+=d.toString());
+    const ff=spawn(ffmpegPath,["-hide_banner","-i",filePath,"-f","null","-"]);
+    let err="";
     ff.stderr.on("data",d=>err+=d.toString());
     ff.on("close",code=>{
+      // FFmpeg returns non-zero for a null output only when decoding failed.
+      // A valid input normally exits 0, but duration is printed to stderr.
+      const m=/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(err);
+      const duration=m ? Number(m[1])*3600+Number(m[2])*60+Number(m[3]) : 0;
       if(code!==0) return reject(new Error(err.slice(-1200)||"Video probe gagal."));
-      try{
-        const stream=JSON.parse(out).streams?.[0]||{};
-        resolve({duration:Number(stream.duration)||0,videoFrames:Number(stream.nb_read_frames)||0});
-      }catch(e){ reject(e); }
+      resolve({duration,videoFrames:duration>0 ? Math.max(2,Math.round(duration*30)) : 0});
     });
     ff.on("error",reject);
   });
@@ -149,8 +154,20 @@ async function compose(job){
       sceneFiles.push(target);
     }
     await fs.writeFile(listFile,sceneFiles.map(file=>`file '${file.replace(/'/g,"'\\''")}'`).join("\n"));
-    try{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c","copy","-movflags","+faststart",silentPath]);}
-    catch{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",silentPath]);}
+    // Always re-encode the concat result. Stream-copying independently
+    // generated MP4s can preserve incompatible timestamps/parameter sets and
+    // produce a file that is technically an MP4 but renders black or fails on
+    // Android/Chrome. Re-encoding also normalizes every scene to one H.264/AAC
+    // timeline with fresh timestamps.
+    await runFfmpeg([
+      "-y","-f","concat","-safe","0","-i",listFile,
+      "-map","0:v:0","-map","0:a:0?",
+      "-fflags","+genpts","-avoid_negative_ts","make_zero",
+      "-c:v","libx264","-profile:v","main","-level","3.1",
+      "-pix_fmt","yuv420p","-preset","veryfast","-crf","22",
+      "-c:a","aac","-ar","44100","-ac","2","-b:a","96k",
+      "-movflags","+faststart",silentPath
+    ]);
 
     // IMPORTANT: the Netlify ffmpeg-static binary used by this app does not
     // include the drawtext filter. Do not add drawtext/drawbox here: doing so
@@ -166,7 +183,7 @@ async function compose(job){
     }
     const volume=Math.min(1,Math.max(0,Number(process.env.MUSIC_VOLUME||0.10)));
     const args=music
-      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath]
+      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-shortest","-movflags","+faststart",finalPath]
       : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath];
     await runFfmpeg(args);
     // Never mark a job completed with a corrupt, zero-frame, or near-zero

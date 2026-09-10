@@ -36,9 +36,12 @@ export async function checkBlobConnection() {
 }
 
 export function blobPublicUrl(pathname) {
-  const base = publicBaseUrl();
-  if (!base) return null;
-  return `${base}/api/blob?key=${encodeURIComponent(pathname)}`;
+  // Always use same-origin URLs. PUBLIC_BASE_URL can point at an older
+  // Netlify deploy/domain and would make newly rendered videos load from the
+  // wrong deployment. The current site will route /api/blob to the blob
+  // function.
+  if (!pathname) return null;
+  return `/api/blob?key=${encodeURIComponent(pathname)}`;
 }
 
 export async function putBlob(pathname, data, contentType, options = {}) {

@@ -54,6 +54,23 @@ async function validateMedia(filePath,label){
   }
 }
 
+async function probeMedia(filePath){
+  return new Promise((resolve,reject)=>{
+    const ff=spawn(ffmpegPath,["-v","error","-count_frames","-select_streams","v:0","-show_entries","stream=nb_read_frames,duration","-of","json","-i",filePath]);
+    let out="",err="";
+    ff.stdout.on("data",d=>out+=d.toString());
+    ff.stderr.on("data",d=>err+=d.toString());
+    ff.on("close",code=>{
+      if(code!==0) return reject(new Error(err.slice(-1200)||"Video probe gagal."));
+      try{
+        const stream=JSON.parse(out).streams?.[0]||{};
+        resolve({duration:Number(stream.duration)||0,videoFrames:Number(stream.nb_read_frames)||0});
+      }catch(e){ reject(e); }
+    });
+    ff.on("error",reject);
+  });
+}
+
 function motionFilter(sceneIndex, duration){
   const fps=30;
   const frames=Math.max(1,Math.round(duration*fps));
@@ -92,15 +109,22 @@ async function renderLocalScene(job, sceneIndex){
     if(voice && (voice.pathname || voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
 
     const duration=Math.max(1,Number(scene.duration)||5);
-    // Reliability-first scene renderer: use a plain image loop + scale/crop.
-    // The previous zoompan chain could produce a completed MP4 with no visible
-    // frames on some ffmpeg-static builds. A simple filter chain is much safer
-    // on Netlify and guarantees the uploaded photo becomes the video frame.
+    // IMPORTANT: the image itself must be the looping input. The previous
+    // renderer put -loop 1 on the silent-audio input, while the JPEG was a
+    // single-frame input. FFmpeg could therefore create a technically valid
+    // MP4 containing only one video frame, which Android displayed as 0:00.
+    // Keep the video input first and loop it explicitly for the full duration.
     const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p`;
-    const args=voice?.url
-      ? ["-y","-loop","1","-i",imagePath,"-i",voicePath,"-vf",vf,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","96k","-shortest","-movflags","+faststart",scenePath]
-      : ["-y","-loop","1","-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-i",imagePath,"-vf",vf,"-t",String(duration),"-map","1:v:0","-map","0:a:0","-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","96k","-movflags","+faststart",scenePath];
+    const hasVoice=Boolean(voice && (voice.pathname || voice.url));
+    const args=hasVoice
+      ? ["-y","-loop","1","-framerate","30","-i",imagePath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath]
+      : ["-y","-loop","1","-framerate","30","-i",imagePath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath];
     await runFfmpeg(args);
+    await validateMedia(scenePath,`Video scene ${sceneIndex+1}`);
+    const probe=await probeMedia(scenePath);
+    if(probe.duration < Math.max(0.5,duration*0.8) || probe.videoFrames < 2){
+      throw new Error(`Scene ${sceneIndex+1} menghasilkan video tidak lengkap: durasi ${probe.duration.toFixed(2)}s, frame ${probe.videoFrames}.`);
+    }
     const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
     return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"local-free"};
   } finally {
@@ -126,7 +150,7 @@ async function compose(job){
     }
     await fs.writeFile(listFile,sceneFiles.map(file=>`file '${file.replace(/'/g,"'\\''")}'`).join("\n"));
     try{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c","copy","-movflags","+faststart",silentPath]);}
-    catch{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","96k","-movflags","+faststart",silentPath]);}
+    catch{await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",silentPath]);}
 
     // IMPORTANT: the Netlify ffmpeg-static binary used by this app does not
     // include the drawtext filter. Do not add drawtext/drawbox here: doing so
@@ -142,11 +166,16 @@ async function compose(job){
     }
     const volume=Math.min(1,Math.max(0,Number(process.env.MUSIC_VOLUME||0.10)));
     const args=music
-      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","96k","-movflags","+faststart",finalPath]
-      : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","96k","-movflags","+faststart",finalPath];
+      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath]
+      : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath];
     await runFfmpeg(args);
-    // Never mark a job completed with a corrupt/unreadable final MP4.
+    // Never mark a job completed with a corrupt, zero-frame, or near-zero
+    // duration final MP4.
     await validateMedia(finalPath,"Video final");
+    const finalProbe=await probeMedia(finalPath);
+    if(finalProbe.videoFrames < 2 || finalProbe.duration < Math.max(0.5,Number(job.duration||1)*0.8)) {
+      throw new Error(`Video final tidak lengkap: durasi ${finalProbe.duration.toFixed(2)}s, frame ${finalProbe.videoFrames}.`);
+    }
     const finalBuffer=await fs.readFile(finalPath);
     if(finalBuffer.length < 1024 || finalBuffer.subarray(4,8).toString("ascii") !== "ftyp") {
       throw new Error("Video final bukan MP4 valid (header ftyp tidak ditemukan).");

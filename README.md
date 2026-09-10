@@ -1,49 +1,27 @@
-# INOVA VISION AI v5.6.12 — NETLIFY READY
+# INOVA VISION — Free Local Video Engine 5.7.0
 
-Versi ini dipindahkan dari Vercel ke Netlify. Tidak membutuhkan Vercel Blob atau @vercel/blob.
+INOVA VISION membuat video affiliate 9:16 dari foto produk tanpa layanan video berbayar.
 
-## Struktur deploy
-- `public/` → website/PWA
-- `netlify/functions/api.js` → API utama
-- `netlify/functions/replicate-webhook.js` → Replicate webhook Background Function
-- `netlify.toml` → routing/build/functions
-- `src/` → pipeline AI/video
+## Mesin gratis
+- **FFmpeg lokal** untuk membuat scene dengan zoom/pan/camera motion sederhana.
+- **Edge TTS** melalui `node-edge-tts` untuk voice Bahasa Indonesia tanpa API key.
+- **Script + shot plan fallback lokal**, jadi `OPENAI_API_KEY` tidak wajib.
+- **Netlify Blobs** untuk menyimpan foto, audio, scene MP4, dan final MP4.
+- OpenAI hanya **opsional** untuk creative planning yang lebih pintar.
 
-## Environment Variables di Netlify
-Wajib:
-- `OPENAI_API_KEY`
-- `REPLICATE_API_TOKEN`
-- `PUBLIC_BASE_URL` = URL Netlify production (opsional; sistem juga mencoba `URL`/`DEPLOY_PRIME_URL`)
+## Alur
+Foto produk → storyboard → voice gratis → render scene 9:16 → subtitle → CTA → musik opsional → MP4 final.
 
-Untuk keamanan webhook:
-- `REPLICATE_WEBHOOK_SECRET`
+## Environment Variable
+Yang dibutuhkan:
+- Netlify Blobs harus aktif/tersedia pada site.
+- `OPENAI_API_KEY` **opsional**.
+- `FREE_TTS_VOICE` opsional, default `id-ID-GadisNeural`.
+- `FREE_TTS_RATE` opsional, default `+0%`.
+- `FREE_TTS_VOLUME` opsional, default `+0%`.
+- `MUSIC_VOLUME` opsional, default `0.10`.
 
-Opsional:
-- `OPENAI_SCRIPT_MODEL`
-- `NETLIFY_BLOB_STORE` (default `inova-vision-ai`)
-- `VIDEO_RESOLUTION`
-- `REPLICATE_MODEL_OWNER`
-- `REPLICATE_MODEL_NAME`
-- `MUSIC_VOLUME`
-- `FREE_TTS_VOICE`
-- `FREE_TTS_RATE`
-- `FREE_TTS_VOLUME`
+Tidak ada API video berbayar yang diperlukan.
 
-## Netlify Blobs
-File job, foto, audio, scene video, dan final MP4 disimpan di Netlify Blobs. Netlify Functions membaca/menulis store secara langsung. Media diberikan ke Replicate melalui endpoint `/api/blob` milik situs Netlify.
-
-## Replicate webhook
-Set webhook Replicate ke:
-`https://DOMAIN-NETLIFY-KAMU.netlify.app/api/webhooks/replicate`
-
-Netlify meneruskannya ke Background Function agar proses webhook dan FFmpeg tidak terhenti oleh batas function sinkron. Netlify Background Functions dapat berjalan hingga 15 menit. 
-
-## Deploy
-1. Upload project ini ke GitHub atau gunakan Netlify Drop.
-2. Netlify Build settings: publish directory `public`, functions directory `netlify/functions` (sudah ada di `netlify.toml`).
-3. Isi Environment Variables.
-4. Deploy ulang.
-5. Buka `/api/health` dan pastikan `version` 5.6.12, `blobStorage:true`, `scriptAI:true`, `configured:true`, dan `ready:true`.
-
-## Replicate credit fallback
-If Replicate returns HTTP 402 / Insufficient credit, the pipeline no longer marks the render as failed. It automatically renders each scene locally from the uploaded product image with a subtle camera-motion effect, uses the generated voiceover when available, then composes the final MP4 with subtitles, CTA, and music. This fallback does not generate new visual frames like an I2V model; it is a reliable no-credit fallback.
+## Catatan
+Renderer lokal tidak menghasilkan frame AI baru seperti model I2V. Gerakan dibuat dari foto asli dengan efek kamera yang stabil, sehingga identitas produk tidak berubah dan biaya API video = Rp0.

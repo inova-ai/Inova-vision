@@ -10,11 +10,6 @@
   included_files = ["src/**", "public/**"]
 
 [[redirects]]
-  from = "/api/webhooks/replicate"
-  to = "/.netlify/functions/replicate-webhook"
-  status = 200
-
-[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
@@ -25,9 +20,5 @@
   status = 200
 
 [functions."process-job"]
-  background = true
-  included_files = ["src/**", "public/**"]
-
-[functions."replicate-webhook"]
   background = true
   included_files = ["src/**", "public/**"]

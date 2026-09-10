@@ -1,8 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import multer from "multer";
-import crypto from "node:crypto";
-import { createPipelineJob, processWebhook, cancelPipelineJob } from "./src/services/pipeline.js";
+import { createPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
 import { getJob, updateJob } from "./src/services/job-store.js";
 import { hasBlobCredentials, checkBlobConnection, getBlob } from "./src/services/blob-store.js";
 import { getStyleList } from "./src/services/creative-engine.js";
@@ -11,35 +10,6 @@ const app = express();
 // Netlify Functions have a binary request limit of about 4.5 MB; keep the server-side upload path conservative.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 9 } });
 
-app.post("/api/webhooks/replicate", express.raw({ type: "application/json", limit: "2mb" }), async (req, res) => {
-  try {
-    if (process.env.REPLICATE_WEBHOOK_SECRET) {
-      const id = req.get("webhook-id");
-      const timestamp = req.get("webhook-timestamp");
-      const signature = req.get("webhook-signature");
-      if (!id || !timestamp || !signature) return res.status(401).json({ error: "Webhook signature headers missing." });
-      const age = Math.abs(Date.now() / 1000 - Number(timestamp));
-      if (!Number.isFinite(age) || age > 300) return res.status(401).json({ error: "Webhook timestamp expired." });
-      const secret = process.env.REPLICATE_WEBHOOK_SECRET.replace(/^whsec_/, "");
-      const signed = `${id}.${timestamp}.${req.body.toString("utf8")}`;
-      const expected = crypto.createHmac("sha256", Buffer.from(secret, "base64")).update(signed).digest("base64");
-      const valid = signature.split(" ").some(part => {
-        const [, value] = part.split(",", 2);
-        if (!value) return false;
-        const a = Buffer.from(value), b = Buffer.from(expected);
-        return a.length === b.length && crypto.timingSafeEqual(a, b);
-      });
-      if (!valid) return res.status(401).json({ error: "Invalid webhook signature." });
-    }
-    const payload = JSON.parse(req.body.toString("utf8"));
-    const result = await processWebhook(payload, req.query.scene, req.query.job);
-    return res.json({ received: true, matched: Boolean(result) });
-  } catch (e) {
-    console.error("Replicate webhook error", e);
-    return res.status(500).json({ error: e.message });
-  }
-});
-
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -47,32 +17,15 @@ app.get("/api/health", async (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   const blobCheck = await checkBlobConnection();
   const blobStorage = blobCheck.ok;
-  const replicateToken = String(process.env.REPLICATE_API_TOKEN || "").trim();
-  let replicateApiReachable = false;
-  let replicateError = null;
-  if (replicateToken) {
-    try {
-      const rr = await fetch("https://api.replicate.com/v1/account", {
-        headers: { Authorization: `Bearer ${replicateToken}`, Accept: "application/json" }
-      });
-      replicateApiReachable = rr.ok;
-      if (!rr.ok) replicateError = `Replicate HTTP ${rr.status}`;
-    } catch (e) {
-      replicateError = e?.message || "Replicate API tidak dapat dihubungi.";
-    }
-  } else {
-    replicateError = "REPLICATE_API_TOKEN tidak terlihat oleh Netlify Function runtime.";
-  }
   const netlifyBlobs = Boolean(process.env.NETLIFY || process.env.NETLIFY_SITE_ID || process.env.NETLIFY_BLOBS_CONTEXT);
+  const scriptAI = Boolean(process.env.OPENAI_API_KEY);
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "5.6.12",
-    configured: Boolean(replicateToken),
-    replicateTokenPresent: Boolean(replicateToken),
-    replicateApiReachable,
-    replicateError,
-    webhookSecurity: Boolean(process.env.REPLICATE_WEBHOOK_SECRET),
+    version: "5.7.0-free-local",
+    engine: "local-free",
+    configured: blobStorage,
+    replicateRemoved: true,
     blobStorage,
     blobConfigured: blobStorage,
     blobAuthMode: netlifyBlobs ? "netlify-blobs" : "not-detected",
@@ -83,10 +36,11 @@ app.get("/api/health", async (_req, res) => {
       explicitAuth: Boolean((process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN) && (process.env.NETLIFY_SITE_ID || process.env.SITE_ID))
     },
     blobError: blobCheck.error,
-    scriptAI: Boolean(process.env.OPENAI_API_KEY),
-    ready: Boolean(replicateToken) && replicateApiReachable && blobStorage && Boolean(process.env.OPENAI_API_KEY),
+    scriptAI,
+    scriptMode: scriptAI ? "optional-openai" : "local-fallback",
+    ready: blobStorage,
     videoFallback: true,
-    videoFallbackMode: "local-image-motion",
+    videoFallbackMode: "local-image-motion-9x16",
     voiceAI: true,
     voiceProvider: "free-edge-tts",
     voiceConfigured: true

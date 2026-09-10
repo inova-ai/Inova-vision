@@ -6,7 +6,7 @@ import { waitUntil } from "@vercel/functions";
 import multer from "multer";
 import { createPipelineJob, processPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
 import { getJob, updateJob } from "./src/services/job-store.js";
-import { hasBlobCredentials, checkBlobConnection, getBlob } from "./src/services/blob-store.js";
+import { hasBlobCredentials, checkBlobConnection, getBlob, getBlobAuthInfo } from "./src/services/blob-store.js";
 import { getStyleList } from "./src/services/creative-engine.js";
 
 const app = express();
@@ -27,7 +27,7 @@ app.get("/api/health", async (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   const blobCheck = await checkBlobConnection();
   const blobStorage = blobCheck.ok;
-  const vercelBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const blobAuth = getBlobAuthInfo();
   const scriptAI = Boolean(process.env.OPENAI_API_KEY);
   res.json({
     ok: true,
@@ -38,10 +38,12 @@ app.get("/api/health", async (_req, res) => {
     replicateRemoved: true,
     blobStorage,
     blobConfigured: blobStorage,
-    blobAuthMode: vercelBlob ? "vercel-blob" : "not-detected",
+    blobAuthMode: blobStorage ? blobAuth.mode : blobAuth.mode,
     blobEnvironment: {
       vercelRuntime: Boolean(process.env.VERCEL),
-      blobReadWriteToken: vercelBlob
+      blobReadWriteToken: blobAuth.blobReadWriteToken,
+      blobStoreId: blobAuth.blobStoreId,
+      vercelOidcToken: blobAuth.vercelOidcToken
     },
     blobError: blobCheck.error,
     scriptAI,

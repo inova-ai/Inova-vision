@@ -55,22 +55,18 @@ async function validateMedia(filePath,label){
 }
 
 async function probeMedia(filePath){
-  // This project ships ffmpeg-static, not ffprobe-static.  Do not pass
-  // ffprobe-only flags (count_frames/show_entries/select_streams) to ffmpeg.
-  // FFmpeg can report container duration through its normal input probe, and
-  // validateMedia() below actually decodes the media, which is the important
-  // check for a playable output.
   return new Promise((resolve,reject)=>{
-    const ff=spawn(ffmpegPath,["-hide_banner","-i",filePath,"-f","null","-"]);
+    // ffmpeg-static is an ffmpeg binary, not ffprobe. Never pass ffprobe-only
+    // flags such as -count_frames/-show_entries/-of to it. We validate by
+    // decoding the stream and read the container duration from ffmpeg output.
+    const ff=spawn(ffmpegPath,["-hide_banner","-i",filePath,"-map","0:v:0","-f","null","-"]);
     let err="";
     ff.stderr.on("data",d=>err+=d.toString());
     ff.on("close",code=>{
-      // FFmpeg returns non-zero for a null output only when decoding failed.
-      // A valid input normally exits 0, but duration is printed to stderr.
       const m=/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(err);
-      const duration=m ? Number(m[1])*3600+Number(m[2])*60+Number(m[3]) : 0;
-      if(code!==0) return reject(new Error(err.slice(-1200)||"Video probe gagal."));
-      resolve({duration,videoFrames:duration>0 ? Math.max(2,Math.round(duration*30)) : 0});
+      const duration=m ? Number(m[1])*3600 + Number(m[2])*60 + Number(m[3]) : 0;
+      if(code!==0 && !duration) return reject(new Error(err.slice(-1200)||"Video probe gagal."));
+      resolve({duration,videoFrames:duration>0?Math.max(2,Math.round(duration*24)):0});
     });
     ff.on("error",reject);
   });
@@ -78,14 +74,130 @@ async function probeMedia(filePath){
 
 function motionFilter(sceneIndex, duration){
   const fps=30;
-  const frames=Math.max(1,Math.round(duration*fps));
+  const frames=Math.max(30,Math.round(duration*fps));
+  // Free, deterministic "camera" motion. The source pixels are never
+  // regenerated or morphed, so logos/text/product geometry stay intact.
+  // Each scene gets a different, very subtle Ken-Burns trajectory.
   const movements=[
-    "zoompan=z='min(zoom+0.0007,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
-    "zoompan=z='if(lte(zoom,1.0),1.08,max(zoom-0.0007,1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
-    "zoompan=z='min(zoom+0.0005,1.06)':x='if(gte(iw-iw/zoom,0),(iw-iw/zoom)*on/${frames},0)':y='ih/2-(ih/zoom/2)'",
-    "zoompan=z='min(zoom+0.0005,1.06)':x='if(gte(iw-iw/zoom,0),(iw-iw/zoom)*(1-on/${frames}),0)':y='ih/2-(ih/zoom/2)'"
+    `zoompan=z='min(zoom+0.00035,1.055)':x='(iw-iw/zoom)*0.50':y='(ih-ih/zoom)*0.50':d=${frames}:s=720x1280:fps=${fps}`,
+    `zoompan=z='min(zoom+0.00030,1.045)':x='(iw-iw/zoom)*(0.22+0.56*on/${Math.max(1,frames-1)})':y='(ih-ih/zoom)*0.50':d=${frames}:s=720x1280:fps=${fps}`,
+    `zoompan=z='min(zoom+0.00032,1.050)':x='(iw-iw/zoom)*0.50':y='(ih-ih/zoom)*(0.18+0.64*on/${Math.max(1,frames-1)})':d=${frames}:s=720x1280:fps=${fps}`,
+    `zoompan=z='if(lte(on,${Math.floor(frames/2)}),1+0.05*on/${Math.max(1,Math.floor(frames/2))},1.05-0.05*(on-${Math.floor(frames/2)})/${Math.max(1,frames-Math.floor(frames/2)-1)})':x='(iw-iw/zoom)*(0.78-0.56*on/${Math.max(1,frames-1)})':y='(ih-ih/zoom)*0.50':d=${frames}:s=720x1280:fps=${fps}`
   ];
-  return `${movements[sceneIndex%movements.length]}:d=${frames}:s=720x1280:fps=${fps}`;
+  return movements[sceneIndex%movements.length];
+}
+
+function aiVideoEnabled(){
+  return Boolean(process.env.REPLICATE_API_TOKEN);
+}
+
+function absolutePublicUrl(job, url){
+  if(!url) return null;
+  if(/^https?:\/\//i.test(url)) return url;
+  const base=String(job.publicBaseUrl||process.env.PUBLIC_BASE_URL||process.env.URL||"").replace(/\/$/,"");
+  if(!base) return null;
+  return `${base}${url.startsWith("/")?url:`/${url}`}`;
+}
+
+function buildI2VPrompt(job, scene){
+  const shot=scene.shot||{};
+  return [
+    "Create a photorealistic vertical product advertisement from the provided reference image.",
+    `Product: ${job.productName||"the product shown in the reference image"}.`,
+    `Camera: ${shot.cameraMovement||"slow push-in"}.`,
+    `Composition: ${shot.composition||"keep the entire product clearly visible"}.`,
+    `Lighting: ${shot.lighting||"natural realistic commercial lighting"}.`,
+    `Style: ${job.style||"ugc"}.`,
+    "Preserve the exact product identity, geometry, proportions, colors, materials, packaging, logo placement and all visible text from the source image.",
+    "The product must remain the same physical object throughout the clip. Do not redesign, replace, morph, duplicate or invent product details.",
+    "Use motion mainly through subtle realistic camera movement, depth/parallax, natural hand/environment motion only when already implied by the source.",
+    "Keep branding and labels stable and readable. No warped text, no extra fingers, no extra products, no floating objects, no surreal motion.",
+    "Photorealistic commercial video, physically plausible motion, stable exposure, natural shadows, clean social-commerce look."
+  ].join(" ");
+}
+
+async function createReplicatePrediction(input){
+  const model=process.env.REPLICATE_I2V_MODEL||"wavespeedai/wan-2.1-i2v-480p";
+  const endpoint=`https://api.replicate.com/v1/models/${model}/predictions`;
+  const r=await fetch(endpoint,{
+    method:"POST",
+    headers:{"Authorization":`Bearer ${process.env.REPLICATE_API_TOKEN}`,"Content-Type":"application/json","Prefer":"wait=60"},
+    body:JSON.stringify({input})
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(`Replicate HTTP ${r.status}: ${data?.detail||data?.error||JSON.stringify(data).slice(0,500)}`);
+  if(data.output) return data;
+  if(!data.id) throw new Error("Replicate tidak mengembalikan prediction id.");
+  let latest=data;
+  for(let i=0;i<90;i++){
+    if(["succeeded","failed","canceled"].includes(latest.status)) break;
+    await new Promise(r=>setTimeout(r,2000));
+    const poll=await fetch(`https://api.replicate.com/v1/predictions/${data.id}`,{headers:{"Authorization":`Bearer ${process.env.REPLICATE_API_TOKEN}`}});
+    latest=await poll.json();
+    if(!poll.ok) throw new Error(`Replicate polling HTTP ${poll.status}`);
+  }
+  if(latest.status!=="succeeded") throw new Error(`Replicate prediction ${latest.status}: ${latest.error||"generation failed"}`);
+  return latest;
+}
+
+function extractVideoUrl(output){
+  if(!output) return null;
+  if(typeof output === "string") return output;
+  if(Array.isArray(output)) return output.find(x=>typeof x==="string"&&/\.(mp4|webm)(\?|$)/i.test(x))||output.find(x=>typeof x==="string")||null;
+  if(typeof output.url === "string") return output.url;
+  if(typeof output.video === "string") return output.video;
+  return null;
+}
+
+async function renderAiScene(job, sceneIndex){
+  const scene=job.scenes[sceneIndex];
+  const selected=job.photos?.[Number(scene?.imageIndex)||0]||job.photos?.[0]||{};
+  const imageUrl=absolutePublicUrl(job,selected.imageUrl||job.imageUrl);
+  if(!imageUrl) throw new Error("URL foto produk tidak dapat dibuat publik untuk AI video.");
+  const duration=Math.max(5,Math.min(10,Number(scene.duration)||5));
+  const fps=16;
+  const input={
+    image:imageUrl,
+    prompt:buildI2VPrompt(job,scene),
+    negative_prompt:"product redesign, changed logo, changed text, warped packaging, duplicate product, extra object, deformed product, melting, morphing, flicker, unstable geometry, cartoon, CGI, surreal motion",
+    aspect_ratio:"9:16",
+    num_frames:Math.max(81,Math.min(100,Math.round(duration*fps))),
+    frames_per_second:fps,
+    sample_steps:Number(process.env.REPLICATE_I2V_STEPS||30),
+    sample_guide_scale:Number(process.env.REPLICATE_I2V_GUIDANCE||5),
+    sample_shift:Number(process.env.REPLICATE_I2V_SHIFT||3),
+    fast_mode:process.env.REPLICATE_I2V_FAST_MODE||"Balanced"
+  };
+  const prediction=await createReplicatePrediction(input);
+  const outputUrl=extractVideoUrl(prediction.output);
+  if(!outputUrl) throw new Error("AI video selesai tetapi URL video tidak ditemukan.");
+  const dir=await jobTmp(job.id);
+  const aiPath=path.join(dir,`ai-${sceneIndex}.mp4`);
+  const imagePath=path.join(dir,`image-${sceneIndex}.jpg`);
+  const voicePath=path.join(dir,`voice-${sceneIndex}.mp3`);
+  const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`);
+  try{
+    await downloadFile(outputUrl,aiPath);
+    await validateMedia(aiPath,`AI video scene ${sceneIndex+1}`);
+    let voice=scene.voice||null;
+    if(!voice){
+      voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
+    }
+    if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    else if(voice?.url) await downloadFile(voice.url,voicePath);
+    if(voice&&(voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
+    const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
+    const hasVoice=Boolean(voice&&(voice.pathname||voice.url));
+    const args=hasVoice
+      ? ["-y","-i",aiPath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration},atrim=0:${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath]
+      : ["-y","-i",aiPath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath];
+    await runFfmpeg(args);
+    await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
+    const probe=await probeMedia(scenePath);
+    if(probe.duration<Math.max(0.5,duration*0.75)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
+    const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
+    return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"ai-i2v",aiProvider:"replicate",aiModel:process.env.REPLICATE_I2V_MODEL||"wavespeedai/wan-2.1-i2v-480p"};
+  }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
 async function renderLocalScene(job, sceneIndex){
@@ -119,7 +231,7 @@ async function renderLocalScene(job, sceneIndex){
     // single-frame input. FFmpeg could therefore create a technically valid
     // MP4 containing only one video frame, which Android displayed as 0:00.
     // Keep the video input first and loop it explicitly for the full duration.
-    const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p`;
+    const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,${motionFilter(sceneIndex,duration)},format=yuv420p`;
     const hasVoice=Boolean(voice && (voice.pathname || voice.url));
     const args=hasVoice
       ? ["-y","-loop","1","-framerate","30","-i",imagePath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",scenePath]
@@ -154,20 +266,11 @@ async function compose(job){
       sceneFiles.push(target);
     }
     await fs.writeFile(listFile,sceneFiles.map(file=>`file '${file.replace(/'/g,"'\\''")}'`).join("\n"));
-    // Always re-encode the concat result. Stream-copying independently
-    // generated MP4s can preserve incompatible timestamps/parameter sets and
-    // produce a file that is technically an MP4 but renders black or fails on
-    // Android/Chrome. Re-encoding also normalizes every scene to one H.264/AAC
-    // timeline with fresh timestamps.
-    await runFfmpeg([
-      "-y","-f","concat","-safe","0","-i",listFile,
-      "-map","0:v:0","-map","0:a:0?",
-      "-fflags","+genpts","-avoid_negative_ts","make_zero",
-      "-c:v","libx264","-profile:v","main","-level","3.1",
-      "-pix_fmt","yuv420p","-preset","veryfast","-crf","22",
-      "-c:a","aac","-ar","44100","-ac","2","-b:a","96k",
-      "-movflags","+faststart",silentPath
-    ]);
+    // Always re-encode the concatenated scenes. AI I2V outputs can have
+    // different time bases/FPS from one scene to another; stream-copy concat
+    // can produce an MP4 that is technically present but reports 0:00 or
+    // fails to seek on Android Chrome.
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-r","30","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",silentPath]);
 
     // IMPORTANT: the Netlify ffmpeg-static binary used by this app does not
     // include the drawtext filter. Do not add drawtext/drawbox here: doing so
@@ -183,7 +286,7 @@ async function compose(job){
     }
     const volume=Math.min(1,Math.max(0,Number(process.env.MUSIC_VOLUME||0.10)));
     const args=music
-      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-shortest","-movflags","+faststart",finalPath]
+      ? ["-y","-i",silentPath,"-stream_loop","-1","-i",music,"-filter_complex",`[1:a]volume=${volume},atrim=0:${job.duration}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]`,"-map","0:v:0","-map","[a]","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath]
       : ["-y","-i",silentPath,"-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","22","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart",finalPath];
     await runFfmpeg(args);
     // Never mark a job completed with a corrupt, zero-frame, or near-zero
@@ -223,12 +326,12 @@ export async function createPipelineJob({photos,musicFile,productName,style,dura
     musicPathname=blob.pathname;
   }
   const job={
-    id,status:"queued",progress:3,step:"Job dibuat · Free Local Video Engine siap merender",
+    id,status:"queued",progress:3,step:"Job dibuat · Free Motion Engine siap merender",
     productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",prompt,
     storyboard,sceneCount:storyboard.length,musicUrl,musicPathname,musicName:musicFile?.originalname||"",
     imageUrl:photoRecords[0]?.imageUrl,imageDataUri:null,sourcePhotoCount:photos.length,photos:photoRecords,
-    scenes:storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0,renderMode:"local-free"})),
-    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:"local-free"
+    scenes:storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0,renderMode:"local-free-motion"})),
+    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:"local-free-motion"
   };
   await saveJob(job);return getJob(id);
 }
@@ -237,24 +340,24 @@ export async function processPipelineJob(jobId){
   let job=await getJob(jobId);
   if(!job) throw new Error("Job tidak ditemukan.");
   if(job.status==="completed") return job;
-  await updateJob(jobId,{status:"rendering",progress:5,step:`Free Local Engine aktif · ${job.sceneCount} scene`});
+  await updateJob(jobId,{status:"rendering",progress:5,step:`Free Motion Engine · ${job.sceneCount} scene`});
   try{
     for(let i=0;i<job.sceneCount;i++){
       job=await getJob(jobId);
       if(job.status==="failed") throw new Error(job.step||"Job gagal.");
-      await updateJob(jobId,{status:"rendering",progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:`Render lokal scene ${i+1}/${job.sceneCount} · tanpa Replicate`});
+      await updateJob(jobId,{status:"rendering",progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:`Render free motion scene ${i+1}/${job.sceneCount}`});
       const result=await renderLocalScene(job,i);
       job=await getJob(jobId);
       const scenes=[...job.scenes];
-      scenes[i]={...scenes[i],...result,status:"completed",progress:100};
-      await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · local-free`,status:i+1===job.sceneCount?"composing":"rendering"});
+      scenes[i]={...scenes[i],...result,status:"completed",progress:100,renderMode:"local-free-motion"};
+      await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · free motion`,status:i+1===job.sceneCount?"composing":"rendering"});
     }
     job=await getJob(jobId);
     await updateJob(jobId,{status:"composing",progress:92,step:"Menyusun video final · audio + video"});
     const finalUrl=await compose(await getJob(jobId));
-    return updateJob(jobId,{status:"completed",progress:100,step:"Video final selesai · 100% local/free renderer",outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:"local-free",engine:"local-free"});
+    return updateJob(jobId,{status:"completed",progress:100,step:"Video final selesai · 100% free local motion",outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:"local-free-motion",engine:"local-free-motion"});
   }catch(e){
-    await updateJob(jobId,{status:"failed",progress:0,step:`Local renderer gagal: ${e?.message||"Unknown error"}`});
+    await updateJob(jobId,{status:"failed",progress:0,step:`Free renderer gagal: ${e?.message||"Unknown error"}`});
     throw e;
   }
 }

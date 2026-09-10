@@ -17,7 +17,7 @@ function ts(sec){const ms=Math.max(0,Math.round(sec*1000));const h=Math.floor(ms
 function escapeDraw(s){return String(s||"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/:/g,"\\:").replace(/,/g,"\\,").replace(/\[/g,"\\[").replace(/\]/g,"\\]").replace(/\n/g,"\\n");}
 function wrap(s,max=38){const words=String(s||"").trim().split(/\s+/);const out=[];let line="";for(const w of words){if((line+" "+w).trim().length>max&&line){out.push(line);line=w;}else line=(line?line+" ":"")+w;}if(line)out.push(line);return out.slice(0,3).join("\n");}
 
-export async function startScene(job, sceneIndex){
+async function prepareScenePrediction(job, sceneIndex){
   const storyboardScene=job.storyboard[sceneIndex];
   const runtimeScene=job.scenes?.[sceneIndex] || {};
   const scene={...storyboardScene,...runtimeScene};
@@ -31,11 +31,19 @@ export async function startScene(job, sceneIndex){
   const shotPrompt=`${job.prompt} Scene ${scene.scene}/${scene.title}: ${scene.direction}
 SHOT PLAN: shot type ${shot.shotType||"hero"}; camera movement ${shot.cameraMovement||"slow push-in"}; composition ${shot.composition||"product centered and fully visible"}; lighting ${shot.lighting||"clean commercial lighting"}; pacing ${shot.pacing||"clear product emphasis"}.
 Execute only realistic camera motion. Preserve exact product identity, shape, colors, branding placement and visible details. Do not morph, duplicate, replace or redesign the product.`;
+  const prediction=await createScenePrediction({imageUrl:selected.imageUrl || job.imageUrl,imageDataUri:selected.imageDataUri || job.imageDataUri,prompt:shotPrompt,duration:scene.duration,webhookUrl,sceneNumber:sceneIndex,jobId:job.id,audioUrl:voice?.url||null});
+  await putBlob(`indexes/prediction-${prediction.id}.json`,JSON.stringify({jobId:job.id,sceneIndex}),"application/json",{cacheControlMaxAge:86400});
+  return {sceneIndex, predictionId:prediction.id, voice, attempt:(runtimeScene.attempt||0)+1};
+}
+
+export async function startScene(job, sceneIndex){
   try {
-    const prediction=await createScenePrediction({imageUrl:selected.imageUrl || job.imageUrl,imageDataUri:selected.imageDataUri || job.imageDataUri,prompt:shotPrompt,duration:scene.duration,webhookUrl,sceneNumber:sceneIndex,jobId:job.id,audioUrl:voice?.url||null});
-    job.scenes[sceneIndex]={...job.scenes[sceneIndex],predictionId:prediction.id,voice,status:"generating",progress:20,attempt:(job.scenes[sceneIndex].attempt||0)+1};
-    await updateJob(job.id,{status:"generating",step:`Generating scene ${sceneIndex+1}/${job.sceneCount} · foto #${(scene.imageIndex ?? 0)+1} · ${scene.shot?.cameraMovement || "camera motion"}`,progress:Math.round((job.scenes.filter(s=>s.status==="completed").length/job.sceneCount)*80)+10,scenes:job.scenes});
-    await putBlob(`indexes/prediction-${prediction.id}.json`,JSON.stringify({jobId:job.id,sceneIndex}),"application/json",{cacheControlMaxAge:86400});
+    const patch=await prepareScenePrediction(job, sceneIndex);
+    const latest=await getJob(job.id);
+    if(!latest) throw new Error("Job tidak ditemukan setelah prediction dibuat.");
+    const current=latest.scenes[sceneIndex]||{};
+    latest.scenes[sceneIndex]={...current,predictionId:patch.predictionId,voice:patch.voice,status:"generating",progress:20,attempt:patch.attempt};
+    await updateJob(job.id,{status:"generating",step:`Generating scene ${sceneIndex+1}/${job.sceneCount} · foto #${(latest.scenes[sceneIndex].imageIndex ?? 0)+1} · ${latest.scenes[sceneIndex].shot?.cameraMovement || "camera motion"}`,progress:Math.round((latest.scenes.filter(s=>s.status==="completed").length/job.sceneCount)*80)+10,scenes:latest.scenes});
   } catch (error) {
     // Replicate returns HTTP 402 when the account has no usable credit.
     // Do not leave the whole job stuck in "failed": render a deterministic
@@ -110,7 +118,16 @@ async function compose(job){
     sceneFiles.push(target);
   }
   await fs.writeFile(listFile,sceneFiles.map(file=>`file '${file.replace(/'/g,"'\\''")}'`).join("\n"));
-  await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-preset","veryfast","-crf","20","-c:a","aac","-b:a","128k","-movflags","+faststart",silentPath]);
+  // Scene files produced by the same Replicate model already use compatible
+  // codecs. Concatenate without re-encoding first; the old pipeline encoded
+  // the entire video once here and then encoded it again for subtitles/CTA.
+  // If a provider ever returns incompatible scene streams, fall back to the
+  // old safe re-encode path automatically.
+  try {
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c","copy","-movflags","+faststart",silentPath]);
+  } catch {
+    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c:v","libx264","-preset","veryfast","-crf","20","-c:a","aac","-b:a","128k","-movflags","+faststart",silentPath]);
+  }
   const filters=[];let cursor=0;
   for(const sc of job.scenes){
     const start=cursor,end=cursor+Number(sc.duration||5);
@@ -181,9 +198,22 @@ export async function processPipelineJob(jobId){
   const job = await getJob(jobId);
   if(!job) throw new Error("Job tidak ditemukan.");
   if(job.status === "completed") return job;
-  await updateJob(jobId,{status:"analyzing",progress:8,step:"AI menganalisis foto produk & menyiapkan scene 1"});
+  await updateJob(jobId,{status:"analyzing",progress:8,step:`AI menyiapkan ${job.sceneCount} scene secara paralel`});
   try {
-    await startScene(await getJob(jobId),0);
+    // Start every scene at once. The previous pipeline waited for scene 1 to
+    // finish before creating scene 2, making a 15–60s render unnecessarily
+    // long. Replicate can process independent scenes concurrently.
+    const launchJob=await getJob(jobId);
+    const prepared=await Promise.all((launchJob.scenes||[]).map((_,i)=>prepareScenePrediction(launchJob,i)));
+    const latest=await getJob(jobId);
+    const scenes=[...latest.scenes];
+    for(const p of prepared){
+      const current=scenes[p.sceneIndex]||{};
+      // Preserve a very fast webhook completion if it arrived while the
+      // predictions were being created.
+      if(current.status!=="completed") scenes[p.sceneIndex]={...current,predictionId:p.predictionId,voice:p.voice,status:"generating",progress:20,attempt:p.attempt};
+    }
+    await updateJob(jobId,{status:"generating",progress:10,step:`${scenes.length} scene sedang dirender bersamaan · menunggu hasil AI`,scenes});
   } catch(e) {
     await updateJob(jobId,{status:"failed",progress:0,step:e?.message || "Gagal memulai render."});
     throw e;
@@ -214,7 +244,10 @@ export async function processWebhook(payload,sceneIndexRaw,jobIdRaw){
   if(payload.status!=="succeeded")return updateJob(job.id,{step:`Generating scene ${sceneIndex+1}/${job.sceneCount} · foto #${(scene.imageIndex ?? 0)+1} · ${scene.shot?.cameraMovement || "camera motion"}`});
   const output=Array.isArray(payload.output)?payload.output[0]:payload.output;if(!output)return updateJob(job.id,{status:"failed",progress:0,step:`Scene ${sceneIndex+1} tidak memiliki output.`});
   const dir=await jobTmp(job.id); const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`); await downloadFile(output,scenePath); const sceneBlob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400}); job.scenes[sceneIndex].status="completed";job.scenes[sceneIndex].progress=100;job.scenes[sceneIndex].outputUrl=sceneBlob.url; await fs.rm(scenePath,{force:true});
-  const next=sceneIndex+1;if(next<job.sceneCount){await updateJob(job.id,{scenes:job.scenes,progress:Math.round(((sceneIndex+1)/job.sceneCount)*85),step:`Scene ${sceneIndex+1}/${job.sceneCount} selesai · memulai scene ${next+1}/${job.sceneCount}`});try{await startScene(await getJob(job.id),next);}catch(e){await updateJob(job.id,{status:"failed",progress:0,step:e.message});}return getJob(job.id);}
+  const completedCount=job.scenes.filter(s=>s.status==="completed").length;
+  if(completedCount<job.sceneCount){
+    return updateJob(job.id,{scenes:job.scenes,progress:Math.min(88,10+Math.round((completedCount/job.sceneCount)*78)),step:`${completedCount}/${job.sceneCount} scene selesai · scene lainnya masih dirender bersamaan`});
+  }
   try{await updateJob(job.id,{scenes:job.scenes,status:"composing",progress:92,step:"Burn-in subtitle, CTA end-card & audio mixing"});const finalUrl=await compose(await getJob(job.id));return updateJob(job.id,{status:"completed",progress:100,step:"Video final selesai · subtitle burn-in + CTA + audio",outputUrl:finalUrl,completedAt:new Date().toISOString()});}catch(e){return updateJob(job.id,{status:"failed",progress:0,step:e.message});}
 }
 export async function cancelPipelineJob(job){for(const s of job.scenes||[]){if(s.predictionId&&s.status==="generating"){try{await cancelPrediction(s.predictionId);}catch(e){console.warn("Cancel prediction:",e.message);}}}return updateJob(job.id,{status:"failed",progress:0,step:"Dibatalkan oleh pengguna"});}

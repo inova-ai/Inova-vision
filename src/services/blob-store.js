@@ -73,7 +73,7 @@ export async function putBlob(pathname, data, contentType, optionsExtra = {}) {
 }
 
 export async function getBlob(pathname, type = 'arrayBuffer') {
-  const result = await get(pathname, options('public'));
+  const result = await get(pathname, { ...options('public'), useCache: false });
   if (!result || result.statusCode !== 200 || !result.stream) return null;
   if (type === 'json') return JSON.parse(await new Response(result.stream).text());
   if (type === 'text') return await new Response(result.stream).text();
@@ -81,7 +81,7 @@ export async function getBlob(pathname, type = 'arrayBuffer') {
 }
 
 export async function getBlobUrl(pathname) {
-  const result = await get(pathname, options('public'));
+  const result = await get(pathname, { ...options('public'), useCache: false });
   return result?.blob?.url || null;
 }
 

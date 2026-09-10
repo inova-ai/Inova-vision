@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import { waitUntil } from "@vercel/functions";
 import multer from "multer";
 import { createPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
 import { getJob, updateJob } from "./src/services/job-store.js";
@@ -7,6 +8,7 @@ import { hasBlobCredentials, checkBlobConnection, getBlob } from "./src/services
 import { getStyleList } from "./src/services/creative-engine.js";
 
 const app = express();
+app.use(express.static("public", { maxAge: "1h", etag: true }));
 // Netlify Functions have a binary request limit of about 4.5 MB; keep the server-side upload path conservative.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 10 } });
 
@@ -17,23 +19,21 @@ app.get("/api/health", async (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   const blobCheck = await checkBlobConnection();
   const blobStorage = blobCheck.ok;
-  const netlifyBlobs = Boolean(process.env.NETLIFY || process.env.NETLIFY_SITE_ID || process.env.NETLIFY_BLOBS_CONTEXT);
+  const vercelBlob = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
   const scriptAI = Boolean(process.env.OPENAI_API_KEY);
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.0.0-free-motion",
+    version: "6.1.1-streaming-video",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,
     blobStorage,
     blobConfigured: blobStorage,
-    blobAuthMode: netlifyBlobs ? "netlify-blobs" : "not-detected",
+    blobAuthMode: vercelBlob ? "vercel-blob" : "not-detected",
     blobEnvironment: {
-      netlifyRuntime: Boolean(process.env.NETLIFY),
-      netlifySiteId: Boolean(process.env.NETLIFY_SITE_ID || process.env.SITE_ID),
-      blobsContext: Boolean(process.env.NETLIFY_BLOBS_CONTEXT),
-      explicitAuth: Boolean((process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN) && (process.env.NETLIFY_SITE_ID || process.env.SITE_ID))
+      vercelRuntime: Boolean(process.env.VERCEL),
+      blobReadWriteToken: vercelBlob
     },
     blobError: blobCheck.error,
     scriptAI,
@@ -45,6 +45,7 @@ app.get("/api/health", async (_req, res) => {
     videoAIModel: null,
     videoFallback: true,
     videoFallbackMode: "local-free-motion-9x16",
+    hosting: "vercel",
     voiceAI: true,
     voiceProvider: "free-edge-tts",
     voiceConfigured: true
@@ -56,31 +57,12 @@ app.get("/api/blob", async (req, res) => {
   try {
     const key = String(req.query.key || "");
     if (!key || key.startsWith("/") || key.includes("..")) return res.status(400).json({ error: "Invalid blob key." });
-    const data = await getBlob(key, "arrayBuffer");
-    if (data == null) return res.status(404).json({ error: "Blob tidak ditemukan." });
-    const buffer = Buffer.from(data);
-    const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".mp3") ? "audio/mpeg" : key.endsWith(".wav") ? "audio/wav" : key.endsWith(".json") ? "application/json" : key.match(/\.(png)$/i) ? "image/png" : key.match(/\.(webp)$/i) ? "image/webp" : "image/jpeg";
-    res.set("Content-Type", type);
-    res.set("Content-Disposition", type === "video/mp4" ? "inline" : "inline");
-    res.set("X-Content-Type-Options", "nosniff");
-    res.set("Accept-Ranges", "bytes");
-    res.set("Cache-Control", key.endsWith(".mp4") ? "public, max-age=31536000, immutable" : "public, max-age=86400");
-    if (req.method === "HEAD") return res.set("Content-Length", String(buffer.length)).status(200).end();
-    const rawRange = req.get("range");
-    if (rawRange && key.endsWith(".mp4")) {
-      const m = /^bytes=(\d*)-(\d*)$/i.exec(rawRange.trim());
-      if (!m) return res.status(416).set("Content-Range", `bytes */${buffer.length}`).end();
-      let start = m[1] ? Number(m[1]) : Math.max(0, buffer.length - Number(m[2] || 0));
-      let end = m[2] ? Number(m[2]) : buffer.length - 1;
-      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= buffer.length || end < start) return res.status(416).set("Content-Range", `bytes */${buffer.length}`).end();
-      end = Math.min(end, buffer.length - 1);
-      const chunk = buffer.subarray(start, end + 1);
-      return res.status(206).set({"Content-Range": `bytes ${start}-${end}/${buffer.length}`, "Content-Length": String(chunk.length)}).send(chunk);
-    }
-    res.set("Content-Length", String(buffer.length));
-    return res.send(buffer);
+    const { getBlobUrl } = await import("./src/services/blob-store.js");
+    const url = await getBlobUrl(key);
+    if (!url) return res.status(404).json({ error: "Blob tidak ditemukan." });
+    return res.redirect(302, url);
   } catch (e) {
-    console.error("Blob proxy error", e);
+    console.error("Blob redirect error", e);
     return res.status(500).json({ error: "Gagal membaca blob." });
   }
 });
@@ -112,24 +94,19 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
       musicFile: req.files.music?.[0] || null,
       baseUrl
     });
-    // Start rendering in a Netlify Background Function so the upload request
-    // returns immediately. This prevents long AI/FFmpeg work from turning a
-    // successfully-created job into a frontend "Gagal membuat job" timeout.
-    try {
-      const workerUrl = `${baseUrl}/.netlify/functions/process-job`;
-      const workerResponse = await fetch(workerUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json", "cache-control": "no-cache" },
-        body: JSON.stringify({ jobId: job.id })
-      });
-      if (!workerResponse.ok) {
-        const detail = await workerResponse.text().catch(() => "");
-        throw new Error(`Background worker HTTP ${workerResponse.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
-      }
-    } catch (workerError) {
-      console.error("Background worker trigger failed:", workerError?.message || workerError);
-      await updateJob(job.id, { status: "failed", progress: 0, step: `Worker render tidak bisa dimulai: ${workerError?.message || "unknown error"}` });
-    }
+    // Vercel has no Netlify-style background function endpoint. Keep the HTTP
+    // response fast, but explicitly extend the Function lifecycle with
+    // waitUntil() so FFmpeg is not killed immediately after 202 is returned.
+    waitUntil(
+      processPipelineJob(job.id).catch(async (workerError) => {
+        console.error("Vercel render worker failed:", workerError?.stack || workerError);
+        try {
+          await updateJob(job.id, { status: "failed", progress: 0, step: `Worker render gagal: ${workerError?.message || "unknown error"}` });
+        } catch (persistError) {
+          console.error("Failed to persist worker error:", persistError);
+        }
+      })
+    );
     res.status(202).json({ job: await getJob(job.id) });
   } catch (e) {
     console.error("Create job error", e);
@@ -148,5 +125,10 @@ app.post("/api/jobs/:id/cancel", async (req, res) => {
   res.json({ job: await cancelPipelineJob(job) });
 });
 
+
+app.use((req, res, next) => {
+  if (req.method === "GET" && !req.path.startsWith("/api/")) return res.sendFile("index.html", { root: "public" });
+  return next();
+});
 
 export default app;

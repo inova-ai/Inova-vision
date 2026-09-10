@@ -1,20 +1,19 @@
 {
-  "name": "inova-vision-free-motion-v6",
-  "version": "6.0.0",
+  "name": "inova-vision-vercel-v6",
+  "version": "6.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "@netlify/blobs": "^9.1.0",
-    "@netlify/functions": "^4.2.1",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "ffmpeg-static": "^5.2.0",
     "multer": "^2.0.2",
     "node-edge-tts": "^1.2.10",
-    "serverless-http": "^3.2.0"
+    "@vercel/blob": "^2.8.0",
+    "@vercel/functions": "^3.9.7"
   },
   "engines": {
     "node": "22.x"

@@ -1,1 +1,1 @@
-INOVA VISION AI - Netlify Blobs diagnostics/fix 5.6.2
+INOVA VISION AI - Blobs/job creation fix 5.6.4

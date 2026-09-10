@@ -67,7 +67,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "5.6.1",
+    version: "5.6.3",
     configured: Boolean(replicateToken),
     replicateTokenPresent: Boolean(replicateToken),
     replicateApiReachable,

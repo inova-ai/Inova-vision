@@ -106,34 +106,28 @@ async function poll() {
       resultBadge.textContent = "COMPLETED";
       blueprint.textContent = `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · AI shot planning aktif · ${j.productName || "Product"}.`;
       const videoBox = document.querySelector(".video-box");
-      videoBox.innerHTML = j.outputUrl
-        ? `<video id="resultVideo" controls playsinline preload="metadata"
-             style="width:100%;height:100%;object-fit:contain;border-radius:14px;background:#111"
-             src="${j.outputUrl}"></video>`
-        : "VIDEO SELESAI";
-
-      // Some Android browsers are stricter about MP4 streaming. If the direct
-      // video URL cannot load metadata, retry once by fetching the MP4 as a
-      // Blob and playing it locally. This is only a playback fallback; the
-      // original output URL remains the download URL.
       if (j.outputUrl) {
-        const video = document.querySelector("#resultVideo");
-        video?.addEventListener("error", async () => {
-          if (video.dataset.fallback === "1") return;
-          video.dataset.fallback = "1";
-          try {
-            const rr = await fetch(j.outputUrl, { cache: "no-store" });
-            if (!rr.ok) throw new Error(`HTTP ${rr.status}`);
-            const blob = await rr.blob();
-            if (!blob.size) throw new Error("Video kosong");
-            const localUrl = URL.createObjectURL(blob);
-            video.src = localUrl;
-            video.load();
-          } catch (e) {
-            console.error("Video playback fallback failed", e);
-            videoBox.insertAdjacentHTML("beforeend", `<div class="video-error">Video selesai dibuat, tetapi browser gagal memutarnya. Coba tombol Download MP4.</div>`);
-          }
+        // Use a real <source> element and force the browser to reload the URL.
+        // The /api/blob endpoint now returns binary MP4 bytes directly with
+        // proper Range/206 support, which is required by Chrome/Android.
+        const video = document.createElement("video");
+        video.controls = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        video.setAttribute("webkit-playsinline", "true");
+        video.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:14px;background:#000";
+        const source = document.createElement("source");
+        source.src = `${j.outputUrl}${j.outputUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(j.updatedAt || j.id || Date.now())}`;
+        source.type = "video/mp4";
+        video.appendChild(source);
+        video.addEventListener("error", () => {
+          console.warn("MP4 playback error", video.error);
+          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px">Video selesai dibuat, tetapi browser belum dapat memutarnya. Tekan <b style="margin:0 5px">Download MP4</b> untuk membuka file.</div>`;
         }, { once: true });
+        videoBox.replaceChildren(video);
+        video.load();
+      } else {
+        videoBox.textContent = "VIDEO SELESAI";
       }
       if (j.outputUrl) {
         let dl = document.querySelector("#downloadVideo");

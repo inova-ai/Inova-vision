@@ -165,7 +165,7 @@ generate.onclick = async () => {
     }
     if (!r.ok) throw new Error(data.error || "Gagal membuat job");
     activeJob = data.job.id;
-    timer = setInterval(poll, 1500);
+    timer = setInterval(poll, 1000);
     poll();
   } catch(e) {
     generate.disabled = false;

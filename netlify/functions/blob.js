@@ -24,23 +24,28 @@ function invalidKey(key) {
   return !key || key.startsWith('/') || key.includes('..') || key.includes('\\') || /[\u0000-\u001f]/.test(key);
 }
 
-function parseRange(value, total) {
-  if (!value) return null;
-  const m = /^bytes=(\d*)-(\d*)$/i.exec(String(value).trim());
-  if (!m) return { invalid: true };
+function rangeFor(rangeHeader, total) {
+  if (!rangeHeader) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHeader).trim());
+  if (!match) return { invalid: true };
+
   let start;
   let end;
-  if (m[1] === '') {
-    const suffix = Number(m[2]);
-    if (!Number.isFinite(suffix) || suffix <= 0) return { invalid: true };
-    start = Math.max(0, total - suffix);
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return { invalid: true };
+    start = Math.max(0, total - suffixLength);
     end = total - 1;
   } else {
-    start = Number(m[1]);
-    end = m[2] === '' ? total - 1 : Number(m[2]);
+    start = Number(match[1]);
+    end = match[2] ? Number(match[2]) : total - 1;
   }
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= total || end < start) return { invalid: true };
-  return { start, end: Math.min(end, total - 1) };
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start >= total || end < start) {
+    return { invalid: true };
+  }
+  end = Math.min(end, total - 1);
+  return { start, end };
 }
 
 export default async (req) => {
@@ -48,16 +53,26 @@ export default async (req) => {
   const url = new URL(req.url, 'https://netlify.local');
   const key = String(url.searchParams.get('key') || '');
 
-  if (!['GET', 'HEAD'].includes(method)) return new Response('', { status: 405, headers: { Allow: 'GET, HEAD' } });
-  if (invalidKey(key)) return new Response(JSON.stringify({ error: 'Invalid blob key.' }), { status: 400, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+  if (!['GET', 'HEAD'].includes(method)) {
+    return { statusCode: 405, headers: { Allow: 'GET, HEAD' }, body: '' };
+  }
+  if (invalidKey(key)) {
+    return { statusCode: 400, headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ error: 'Invalid blob key.' }) };
+  }
 
   try {
+    // Netlify Blobs returns an ArrayBuffer. Converting it to Buffer and then
+    // explicitly base64-encoding the function response is important: the
+    // normal serverless-http adapter can otherwise corrupt binary MP4 bytes.
     const data = await getBlobStore().get(key, { type: 'arrayBuffer' });
-    if (data == null) return new Response(JSON.stringify({ error: 'Blob tidak ditemukan.' }), { status: 404, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+    if (data == null) {
+      return { statusCode: 404, headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ error: 'Blob tidak ditemukan.' }) };
+    }
 
     const buffer = Buffer.from(data);
+    const total = buffer.length;
     const type = contentType(key);
-    const baseHeaders = {
+    const headers = {
       'Content-Type': type,
       'Accept-Ranges': 'bytes',
       'Cache-Control': key.endsWith('.mp4') ? 'public, max-age=31536000, immutable' : 'public, max-age=86400',
@@ -65,26 +80,29 @@ export default async (req) => {
     };
 
     if (method === 'HEAD') {
-      return new Response(null, { status: 200, headers: { ...baseHeaders, 'Content-Length': String(buffer.length) } });
+      headers['Content-Length'] = String(total);
+      return { statusCode: 200, headers, body: '' };
     }
 
-    const range = key.endsWith('.mp4') ? parseRange(req.headers.get('range'), buffer.length) : null;
-    if (range?.invalid) {
-      return new Response(null, { status: 416, headers: { ...baseHeaders, 'Content-Range': `bytes */${buffer.length}` } });
+    const rangeHeader = typeof req.headers?.get === 'function' ? req.headers.get('range') : (req.headers?.range || req.headers?.Range);
+    const requestedRange = rangeFor(rangeHeader, total);
+    if (requestedRange?.invalid) {
+      headers['Content-Range'] = `bytes */${total}`;
+      return { statusCode: 416, headers, body: '' };
     }
 
-    if (range) {
-      const chunk = buffer.subarray(range.start, range.end + 1);
-      return new Response(chunk, { status: 206, headers: {
-        ...baseHeaders,
-        'Content-Length': String(chunk.length),
-        'Content-Range': `bytes ${range.start}-${range.end}/${buffer.length}`
-      } });
+    if (!requestedRange) {
+      headers['Content-Length'] = String(total);
+      return { statusCode: 200, headers, isBase64Encoded: true, body: buffer.toString('base64') };
     }
 
-    return new Response(buffer, { status: 200, headers: { ...baseHeaders, 'Content-Length': String(buffer.length) } });
+    const { start, end } = requestedRange;
+    const chunk = buffer.subarray(start, end + 1);
+    headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
+    headers['Content-Length'] = String(chunk.length);
+    return { statusCode: 206, headers, isBase64Encoded: true, body: chunk.toString('base64') };
   } catch (error) {
     console.error('Blob function error:', error?.stack || error?.message || error);
-    return new Response(JSON.stringify({ error: 'Gagal membaca blob.' }), { status: 500, headers: { 'Content-Type': 'application/json; charset=utf-8' } });
+    return { statusCode: 500, headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify({ error: 'Gagal membaca blob.' }) };
   }
 };

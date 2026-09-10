@@ -1,1 +1,1 @@
-5.7.0-free-local
+INOVA VISION v5.8.0 - drawtext-free FFmpeg compose fix

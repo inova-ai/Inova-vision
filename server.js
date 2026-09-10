@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { waitUntil } from "@vercel/functions";
 import multer from "multer";
-import { createPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
+import { createPipelineJob, processPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
 import { getJob, updateJob } from "./src/services/job-store.js";
 import { hasBlobCredentials, checkBlobConnection, getBlob } from "./src/services/blob-store.js";
 import { getStyleList } from "./src/services/creative-engine.js";
@@ -24,7 +24,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.3.1-vercel-prompt-video-editor",
+    version: "6.3.2-vercel-prompt-video-editor",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,

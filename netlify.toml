@@ -25,4 +25,9 @@
   status = 200
 
 [functions."process-job-background"]
+  background = true
+  included_files = ["src/**", "public/**"]
+
+[functions."replicate-webhook"]
+  background = true
   included_files = ["src/**", "public/**"]

@@ -137,12 +137,16 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "m
       const workerUrl = `${baseUrl}/.netlify/functions/process-job-background`;
       const workerResponse = await fetch(workerUrl, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "cache-control": "no-cache" },
         body: JSON.stringify({ jobId: job.id })
       });
-      if (!workerResponse.ok) console.warn("Background worker trigger returned", workerResponse.status);
+      if (!workerResponse.ok) {
+        const detail = await workerResponse.text().catch(() => "");
+        throw new Error(`Background worker HTTP ${workerResponse.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
+      }
     } catch (workerError) {
-      console.warn("Background worker trigger failed:", workerError?.message || workerError);
+      console.error("Background worker trigger failed:", workerError?.message || workerError);
+      await updateJob(job.id, { status: "failed", progress: 0, step: `Worker render tidak bisa dimulai: ${workerError?.message || "unknown error"}` });
     }
     res.status(202).json({ job: await getJob(job.id) });
   } catch (e) {

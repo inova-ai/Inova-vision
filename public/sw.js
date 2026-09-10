@@ -1,4 +1,4 @@
-const CACHE = "inova-v5.6.1-pwa3";
+const CACHE = "inova-v5.6.4-pwa5";
 const APP_SHELL = ["/", "/styles.css", "/app.js", "/manifest.json", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", event => {

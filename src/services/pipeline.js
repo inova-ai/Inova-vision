@@ -168,15 +168,27 @@ export async function createPipelineJob({photos,musicFile,productName,style,dura
     photos:photoRecords,
     scenes:storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0})),
     createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl};
-  // Persist the newly-created job before any update/startScene call.
-  // Previously updateJob() was called before the job existed in Blobs,
-  // which returned null and caused the frontend to read data.job.id from null.
+  // Persist first. Processing is intentionally NOT performed inside the
+  // upload request: video rendering can take longer than a normal Netlify
+  // Function request and would otherwise surface as "Gagal membuat job" /
+  // gateway timeout even though the job was created successfully.
   await saveJob(job);
-  try{
-    await updateJob(id,{status:"analyzing",progress:8,step:"AI menganalisis foto produk & menyiapkan scene 1"});
-    await startScene(await getJob(id),0);
-  }catch(e){await updateJob(id,{status:"failed",progress:0,step:e.message});}
+  await updateJob(id,{status:"queued",progress:3,step:"Job berhasil dibuat · menunggu worker render"});
   return await getJob(id);
+}
+
+export async function processPipelineJob(jobId){
+  const job = await getJob(jobId);
+  if(!job) throw new Error("Job tidak ditemukan.");
+  if(job.status === "completed") return job;
+  await updateJob(jobId,{status:"analyzing",progress:8,step:"AI menganalisis foto produk & menyiapkan scene 1"});
+  try {
+    await startScene(await getJob(jobId),0);
+  } catch(e) {
+    await updateJob(jobId,{status:"failed",progress:0,step:e?.message || "Gagal memulai render."});
+    throw e;
+  }
+  return await getJob(jobId);
 }
 
 export async function processWebhook(payload,sceneIndexRaw,jobIdRaw){

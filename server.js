@@ -52,61 +52,12 @@ app.get("/api/blob", async (req, res) => {
   try {
     const key = String(req.query.key || "");
     if (!key || key.startsWith("/") || key.includes("..")) return res.status(400).json({ error: "Invalid blob key." });
-
     const data = await getBlob(key, "arrayBuffer");
     if (data == null) return res.status(404).json({ error: "Blob tidak ditemukan." });
-
-    const buffer = Buffer.from(data);
     const type = key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".mp3") ? "audio/mpeg" : key.endsWith(".wav") ? "audio/wav" : key.endsWith(".json") ? "application/json" : key.match(/\.(png)$/i) ? "image/png" : key.match(/\.(webp)$/i) ? "image/webp" : "image/jpeg";
-    const total = buffer.length;
-
-    // HTML5 video on Android/Chrome commonly requests byte ranges. Returning
-    // the whole MP4 without Range support can leave the player stuck at 0:00
-    // even though the MP4 itself is valid. Support both normal and Range reads.
     res.set("Content-Type", type);
-    res.set("Cache-Control", "public, max-age=31536000, immutable");
-    res.set("Accept-Ranges", "bytes");
-    res.set("X-Content-Type-Options", "nosniff");
-
-    if (req.method === "HEAD") {
-      res.set("Content-Length", String(total));
-      return res.status(200).end();
-    }
-
-    const range = String(req.headers.range || "").trim();
-    if (!range) {
-      res.set("Content-Length", String(total));
-      return res.status(200).send(buffer);
-    }
-
-    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-    if (!match) {
-      res.set("Content-Range", `bytes */${total}`);
-      return res.status(416).end();
-    }
-
-    let start = match[1] ? Number(match[1]) : 0;
-    let end = match[2] ? Number(match[2]) : total - 1;
-    if (!Number.isFinite(start) || !Number.isFinite(end)) {
-      res.set("Content-Range", `bytes */${total}`);
-      return res.status(416).end();
-    }
-    if (!match[1]) {
-      const suffixLength = Math.min(end, total);
-      start = Math.max(0, total - suffixLength);
-      end = total - 1;
-    }
-    end = Math.min(end, total - 1);
-    if (start < 0 || start >= total || end < start) {
-      res.set("Content-Range", `bytes */${total}`);
-      return res.status(416).end();
-    }
-
-    const chunk = buffer.subarray(start, end + 1);
-    res.status(206);
-    res.set("Content-Range", `bytes ${start}-${end}/${total}`);
-    res.set("Content-Length", String(chunk.length));
-    return res.send(chunk);
+    res.set("Cache-Control", "public, max-age=86400");
+    return res.send(Buffer.from(data));
   } catch (e) {
     console.error("Blob proxy error", e);
     return res.status(500).json({ error: "Gagal membaca blob." });

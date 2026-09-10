@@ -10,6 +10,12 @@
   included_files = ["src/**", "public/**"]
 
 [[redirects]]
+  from = "/api/blob"
+  to = "/.netlify/functions/blob"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200

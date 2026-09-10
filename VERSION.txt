@@ -1,1 +1,1 @@
-INOVA VISION v5.8.1 - blank video fix (reliable image-to-video scenes)
+INOVA VISION v5.8.2 - blank video fix (reliable image-to-video scenes)

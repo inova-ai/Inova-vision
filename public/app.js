@@ -120,9 +120,16 @@ async function poll() {
         source.src = `${j.outputUrl}${j.outputUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(j.updatedAt || j.id || Date.now())}`;
         source.type = "video/mp4";
         video.appendChild(source);
-        video.addEventListener("error", () => {
-          console.warn("MP4 playback error", video.error);
-          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px">Video selesai dibuat, tetapi browser belum dapat memutarnya. Tekan <b style="margin:0 5px">Download MP4</b> untuk membuka file.</div>`;
+        video.addEventListener("loadedmetadata", () => {
+          console.log("INOVA MP4 OK", { duration: video.duration, width: video.videoWidth, height: video.videoHeight });
+        }, { once: true });
+        video.addEventListener("error", async () => {
+          console.warn("INOVA MP4 playback error", video.error, source.src);
+          try {
+            const probe = await fetch(source.src, { method: "HEAD", cache: "no-store" });
+            console.warn("INOVA MP4 HEAD", probe.status, probe.headers.get("content-type"), probe.headers.get("content-length"), probe.headers.get("accept-ranges"));
+          } catch (probeError) { console.warn("INOVA MP4 probe failed", probeError); }
+          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px"><div><b style="display:block;margin-bottom:8px">Video tidak dapat diputar</b><span>File render tidak berhasil dibaca browser.</span></div></div>`;
         }, { once: true });
         videoBox.replaceChildren(video);
         video.load();

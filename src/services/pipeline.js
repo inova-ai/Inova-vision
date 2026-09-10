@@ -37,8 +37,13 @@ Execute only realistic camera motion. Preserve exact product identity, shape, co
 }
 
 export async function startScene(job, sceneIndex){
+  const storyboardScene=job.storyboard[sceneIndex];
+  const runtimeScene=job.scenes?.[sceneIndex] || {};
+  const selected = job.photos?.[Number(runtimeScene.imageIndex ?? storyboardScene?.imageIndex)||0] || job.photos?.[0] || {};
+  let voice = runtimeScene.voice || null;
   try {
     const patch=await prepareScenePrediction(job, sceneIndex);
+    voice = patch.voice || voice;
     const latest=await getJob(job.id);
     if(!latest) throw new Error("Job tidak ditemukan setelah prediction dibuat.");
     const current=latest.scenes[sceneIndex]||{};
@@ -198,44 +203,62 @@ export async function processPipelineJob(jobId){
   const job = await getJob(jobId);
   if(!job) throw new Error("Job tidak ditemukan.");
   if(job.status === "completed") return job;
-  await updateJob(jobId,{status:"analyzing",progress:8,step:`AI menyiapkan ${job.sceneCount} scene secara paralel`});
+
+  await updateJob(jobId,{status:"analyzing",progress:6,step:`Worker aktif · menyiapkan ${job.sceneCount} scene secara paralel`});
+
   try {
-    // Start every scene at once. The previous pipeline waited for scene 1 to
-    // finish before creating scene 2, making a 15–60s render unnecessarily
-    // long. Replicate can process independent scenes concurrently.
+    // Create all Replicate predictions concurrently. We intentionally persist
+    // the combined scene state once at the end so concurrent Blob writes cannot
+    // overwrite each other. The per-prediction index written by
+    // prepareScenePrediction lets a very fast webhook identify its scene even
+    // before this combined state update reaches Blob.
     const launchJob=await getJob(jobId);
     const prepared=await Promise.all((launchJob.scenes||[]).map((_,i)=>prepareScenePrediction(launchJob,i)));
     const latest=await getJob(jobId);
+    if(!latest) throw new Error("Job hilang setelah prediction dibuat.");
     const scenes=[...latest.scenes];
     for(const p of prepared){
       const current=scenes[p.sceneIndex]||{};
-      // Preserve a very fast webhook completion if it arrived while the
-      // predictions were being created.
-      if(current.status!=="completed") scenes[p.sceneIndex]={...current,predictionId:p.predictionId,voice:p.voice,status:"generating",progress:20,attempt:p.attempt};
+      // Preserve a webhook that completed while predictions were being created.
+      if(current.status!=="completed") {
+        scenes[p.sceneIndex]={...current,predictionId:p.predictionId,voice:p.voice,status:"generating",progress:20,attempt:p.attempt};
+      } else if(!current.predictionId) {
+        scenes[p.sceneIndex]={...current,predictionId:p.predictionId,voice:p.voice};
+      }
     }
-    await updateJob(jobId,{status:"generating",progress:10,step:`${scenes.length} scene sedang dirender bersamaan · menunggu hasil AI`,scenes});
+    const active=scenes.filter(x=>x.status==="generating"||x.status==="completed").length;
+    await updateJob(jobId,{status:"generating",progress:Math.max(10,Math.round((active/latest.sceneCount)*20)),step:`${latest.sceneCount} scene dikirim ke AI · render paralel aktif`,scenes});
+    return await getJob(jobId);
   } catch(e) {
     await updateJob(jobId,{status:"failed",progress:0,step:e?.message || "Gagal memulai render."});
     throw e;
   }
-  return await getJob(jobId);
 }
 
 export async function processWebhook(payload,sceneIndexRaw,jobIdRaw){
   const id=payload?.id,sceneIndex=Number(sceneIndexRaw);if(!id||!Number.isInteger(sceneIndex))return null;
   let job=null;
-  // The prediction ID is checked against the durable job stored in Blob.
-  // The webhook URL already carries the scene index, so no filesystem scan is needed.
-  // Prefer the job id carried in the webhook URL. This removes a race where
-  // Replicate can deliver a very fast webhook before the prediction index is written.
+  const { readBlobJson } = await import("./blob-store.js");
+  const index = await readBlobJson(`indexes/prediction-${id}.json`);
+  // Prefer the job id carried in the webhook URL, but use the durable
+  // prediction index as the authoritative fallback for very fast webhooks.
   if(jobIdRaw) job=await getJob(jobIdRaw);
-  if(!job){
-    const { readBlobJson } = await import("./blob-store.js");
-    const index = await readBlobJson(`indexes/prediction-${id}.json`);
-    if(index?.jobId) job=await getJob(index.jobId);
-  }
+  if(!job && index?.jobId) job=await getJob(index.jobId);
   if(!job)return null;
-  if(job.scenes?.[sceneIndex]?.predictionId!==id)return null;
+
+  // A prediction can finish before processPipelineJob performs its final
+  // combined scene-state write. Accept the webhook when the prediction index
+  // confirms the same job/scene, instead of silently dropping it.
+  let matched = job.scenes?.[sceneIndex]?.predictionId===id;
+  if(!matched && index?.jobId===job.id && Number(index.sceneIndex)===sceneIndex) matched=true;
+  if(!matched && jobIdRaw){
+    for(let attempt=0; attempt<8 && !matched; attempt++){
+      await new Promise(r=>setTimeout(r,500));
+      job=await getJob(jobIdRaw);
+      matched=job?.scenes?.[sceneIndex]?.predictionId===id || (index?.jobId===job?.id && Number(index.sceneIndex)===sceneIndex);
+    }
+  }
+  if(!matched)return null;
   if(payload.status==="failed"||payload.status==="canceled"){
     const scene=job.scenes[sceneIndex];
     if(scene.attempt<2&&job.status!=="failed"){await updateJob(job.id,{step:`Scene ${sceneIndex+1} gagal · retry otomatis ${scene.attempt}/2`});try{await startScene(await getJob(job.id),sceneIndex);return getJob(job.id);}catch(e){return updateJob(job.id,{status:"failed",progress:0,step:e.message});}}
@@ -243,7 +266,7 @@ export async function processWebhook(payload,sceneIndexRaw,jobIdRaw){
   }
   if(payload.status!=="succeeded")return updateJob(job.id,{step:`Generating scene ${sceneIndex+1}/${job.sceneCount} · foto #${(scene.imageIndex ?? 0)+1} · ${scene.shot?.cameraMovement || "camera motion"}`});
   const output=Array.isArray(payload.output)?payload.output[0]:payload.output;if(!output)return updateJob(job.id,{status:"failed",progress:0,step:`Scene ${sceneIndex+1} tidak memiliki output.`});
-  const dir=await jobTmp(job.id); const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`); await downloadFile(output,scenePath); const sceneBlob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400}); job.scenes[sceneIndex].status="completed";job.scenes[sceneIndex].progress=100;job.scenes[sceneIndex].outputUrl=sceneBlob.url; await fs.rm(scenePath,{force:true});
+  const dir=await jobTmp(job.id); const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`); await downloadFile(output,scenePath); const sceneBlob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400}); job.scenes[sceneIndex].predictionId=id;job.scenes[sceneIndex].status="completed";job.scenes[sceneIndex].progress=100;job.scenes[sceneIndex].outputUrl=sceneBlob.url; await fs.rm(scenePath,{force:true});
   const completedCount=job.scenes.filter(s=>s.status==="completed").length;
   if(completedCount<job.sceneCount){
     return updateJob(job.id,{scenes:job.scenes,progress:Math.min(88,10+Math.round((completedCount/job.sceneCount)*78)),step:`${completedCount}/${job.sceneCount} scene selesai · scene lainnya masih dirender bersamaan`});

@@ -1,1 +1,1 @@
-5.6.10 - worker-start + background-fix + webhook-race-fix + parallel-render
+5.6.12 - worker-trigger-error-fix + updateJob-import-fix + health-version-sync + parallel-render

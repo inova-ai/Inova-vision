@@ -1,5 +1,7 @@
 import "dotenv/config";
 import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { waitUntil } from "@vercel/functions";
 import multer from "multer";
 import { createPipelineJob, processPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
@@ -8,7 +10,12 @@ import { hasBlobCredentials, checkBlobConnection, getBlob } from "./src/services
 import { getStyleList } from "./src/services/creative-engine.js";
 
 const app = express();
-app.use(express.static("public", { maxAge: "1h", etag: true }));
+// Resolve static assets relative to this file, not process.cwd(). On Vercel
+// the Express function can run with a different working directory.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const publicDir = path.join(__dirname, "public");
+app.use(express.static(publicDir, { maxAge: "1h", etag: true }));
 // Netlify Functions have a binary request limit of about 4.5 MB; keep the server-side upload path conservative.
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 3 * 1024 * 1024, files: 10 } });
 
@@ -127,11 +134,11 @@ app.post("/api/jobs/:id/cancel", async (req, res) => {
 
 
 app.get("/", (_req, res) => {
-  res.sendFile("index.html", { root: "public" });
+  res.sendFile(path.join(publicDir, "index.html"));
 });
 
 app.use((req, res, next) => {
-  if (req.method === "GET" && !req.path.startsWith("/api/")) return res.sendFile("index.html", { root: "public" });
+  if (req.method === "GET" && !req.path.startsWith("/api/")) return res.sendFile(path.join(publicDir, "index.html"));
   return next();
 });
 

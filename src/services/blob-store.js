@@ -1,17 +1,50 @@
-import { put, get, list } from '@vercel/blob';
+import { put, get, list, del } from '@vercel/blob';
 
-// Vercel Blob adapter. The store must be created in Vercel with PUBLIC access
-// because finished MP4s are delivered directly by the Blob CDN to the browser.
-function token() { return process.env.BLOB_READ_WRITE_TOKEN || undefined; }
-function options(access = 'public') { return { access, ...(token() ? { token: token() } : {}) }; }
+// Vercel Blob adapter supporting both legacy static tokens and the 2026 OIDC flow.
+// New Vercel Blob stores normally use BLOB_STORE_ID + VERCEL_OIDC_TOKEN.
+function staticToken() { return process.env.BLOB_READ_WRITE_TOKEN || undefined; }
+function storeId() { return process.env.BLOB_STORE_ID || undefined; }
+function oidcToken() { return process.env.VERCEL_OIDC_TOKEN || undefined; }
+
+function authOptions() {
+  const token = staticToken();
+  if (token) return { token };
+
+  // Explicit OIDC credentials make the adapter work with projects connected to
+  // a Vercel Blob store without requiring a long-lived read/write token.
+  const oidc = oidcToken();
+  const store = storeId();
+  if (oidc && store) return { oidcToken: oidc, storeId: store };
+
+  // Let the current @vercel/blob SDK auto-detect Vercel's runtime OIDC
+  // credentials when they are injected by the platform.
+  return {};
+}
+
+function options(access = 'public') {
+  return { access, ...authOptions() };
+}
+
+export function getBlobAuthInfo() {
+  const token = Boolean(staticToken());
+  const store = Boolean(storeId());
+  const oidc = Boolean(oidcToken());
+  return {
+    mode: token ? 'vercel-blob-token' : (store ? 'oidc' : 'not-detected'),
+    blobReadWriteToken: token,
+    blobStoreId: store,
+    vercelOidcToken: oidc
+  };
+}
 
 export function hasBlobCredentials() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const auth = getBlobAuthInfo();
+  return auth.blobReadWriteToken || auth.blobStoreId;
 }
 
 export async function checkBlobConnection() {
   try {
-    await list({ prefix: '__health__', limit: 1, ...(token() ? { token: token() } : {}) });
+    await list({ prefix: '__health__', limit: 1, ...authOptions() });
     return { ok: true, error: null };
   } catch (error) {
     const message = error?.message || String(error);
@@ -21,7 +54,6 @@ export async function checkBlobConnection() {
 }
 
 export function blobPublicUrl(pathname) {
-  // Kept for compatibility. New blobs return their real Vercel Blob CDN URL.
   return pathname ? `/api/blob?key=${encodeURIComponent(pathname)}` : null;
 }
 
@@ -58,8 +90,5 @@ export async function readBlobJson(pathname) {
 }
 
 export async function deleteBlob(pathname) {
-  try {
-    const { del } = await import('@vercel/blob');
-    await del(pathname, { token: token() });
-  } catch {}
+  try { await del(pathname, authOptions()); } catch {}
 }

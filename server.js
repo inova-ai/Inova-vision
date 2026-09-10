@@ -23,6 +23,7 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/api/health", async (_req, res) => {
+  res.type("application/json");
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   const blobCheck = await checkBlobConnection();
   const blobStorage = blobCheck.ok;

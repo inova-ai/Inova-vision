@@ -113,7 +113,7 @@ async function poll() {
         const video = document.createElement("video");
         video.controls = true;
         video.playsInline = true;
-        video.preload = "metadata";
+        video.preload = "auto";
         video.setAttribute("webkit-playsinline", "true");
         video.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:14px;background:#000";
         const source = document.createElement("source");
@@ -122,6 +122,9 @@ async function poll() {
         video.appendChild(source);
         video.addEventListener("loadedmetadata", () => {
           console.log("INOVA MP4 OK", { duration: video.duration, width: video.videoWidth, height: video.videoHeight });
+          if (!Number.isFinite(video.duration) || video.duration <= 0 || video.videoWidth <= 0 || video.videoHeight <= 0) {
+            video.dispatchEvent(new Event("error"));
+          }
         }, { once: true });
         video.addEventListener("error", async () => {
           console.warn("INOVA MP4 playback error", video.error, source.src);

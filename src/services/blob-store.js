@@ -7,7 +7,7 @@ function store() {
   // If the site context is not injected, explicitly provide the site ID/token
   // when they are available as environment variables.
   const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
-  const token = process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN;
+  const token = process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_BLOBS_TOKEN;
   if (siteID && token) return getStore({ name: STORE_NAME, siteID, token });
   return getStore(STORE_NAME);
 }
@@ -20,7 +20,7 @@ export function hasBlobCredentials() {
   return Boolean(
     process.env.NETLIFY_BLOBS_CONTEXT ||
     ((process.env.NETLIFY_SITE_ID || process.env.SITE_ID) &&
-      (process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN))
+      (process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_BLOBS_TOKEN))
   );
 }
 

@@ -110,7 +110,10 @@ export async function createPipelineJob({photos,musicFile,productName,style,dura
     photos:photoRecords,
     scenes:storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0})),
     createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl};
-  await updateJob(id,job);
+  // Persist the newly-created job before any update/startScene call.
+  // Previously updateJob() was called before the job existed in Blobs,
+  // which returned null and caused the frontend to read data.job.id from null.
+  await saveJob(job);
   try{
     await updateJob(id,{status:"analyzing",progress:8,step:"AI menganalisis foto produk & menyiapkan scene 1"});
     await startScene(await getJob(id),0);

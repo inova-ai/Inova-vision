@@ -122,9 +122,6 @@ async function poll() {
         video.appendChild(source);
         video.addEventListener("loadedmetadata", () => {
           console.log("INOVA MP4 OK", { duration: video.duration, width: video.videoWidth, height: video.videoHeight });
-          if (!Number.isFinite(video.duration) || video.duration <= 0 || video.videoWidth <= 0 || video.videoHeight <= 0) {
-            video.dispatchEvent(new Event("error"));
-          }
         }, { once: true });
         video.addEventListener("error", async () => {
           console.warn("INOVA MP4 playback error", video.error, source.src);
@@ -221,12 +218,9 @@ async function refreshHealth() {
     if (!x.blobStorage) {
       engine.textContent = "SET NETLIFY BLOB";
       renderStep.textContent = "Netlify Blobs belum dapat diakses oleh backend. Pastikan site ter-deploy sebagai Netlify Function.";
-    } else if (x.scriptAI) {
-      engine.textContent = "FREE LOCAL + AI PLAN";
-      renderStep.textContent = "Video dirender lokal tanpa Replicate. OpenAI hanya opsional untuk creative planning.";
     } else {
-      engine.textContent = "FREE LOCAL READY";
-      renderStep.textContent = "100% video engine lokal: FFmpeg + free Edge TTS + script fallback. Replicate tidak diperlukan.";
+      engine.textContent = "FREE MOTION READY";
+      renderStep.textContent = "100% gratis · gerakan kamera halus tanpa AI generatif, jadi bentuk/logo/teks produk tetap stabil.";
     }
   } catch (e) {
     engine.textContent = "HEALTH ERROR";

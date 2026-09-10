@@ -45,7 +45,8 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get("/api/health", async (_req, res) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  const blobStorage = await checkBlobConnection();
+  const blobCheck = await checkBlobConnection();
+  const blobStorage = blobCheck.ok;
   const replicateToken = String(process.env.REPLICATE_API_TOKEN || "").trim();
   let replicateApiReachable = false;
   let replicateError = null;
@@ -75,7 +76,13 @@ app.get("/api/health", async (_req, res) => {
     blobStorage,
     blobConfigured: blobStorage,
     blobAuthMode: netlifyBlobs ? "netlify-blobs" : "not-detected",
-    blobEnvironment: { netlifyRuntime: Boolean(process.env.NETLIFY), netlifySiteId: Boolean(process.env.NETLIFY_SITE_ID) },
+    blobEnvironment: {
+      netlifyRuntime: Boolean(process.env.NETLIFY),
+      netlifySiteId: Boolean(process.env.NETLIFY_SITE_ID || process.env.SITE_ID),
+      blobsContext: Boolean(process.env.NETLIFY_BLOBS_CONTEXT),
+      explicitAuth: Boolean((process.env.NETLIFY_AUTH_TOKEN || process.env.NETLIFY_API_TOKEN) && (process.env.NETLIFY_SITE_ID || process.env.SITE_ID))
+    },
+    blobError: blobCheck.error,
     scriptAI: Boolean(process.env.OPENAI_API_KEY),
     ready: Boolean(replicateToken) && replicateApiReachable && blobStorage && Boolean(process.env.OPENAI_API_KEY),
     voiceAI: true,

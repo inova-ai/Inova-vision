@@ -84,7 +84,8 @@ export default async (req) => {
       return { statusCode: 200, headers, body: '' };
     }
 
-    const requestedRange = rangeFor(req.headers?.range || req.headers?.Range, total);
+    const rangeHeader = typeof req.headers?.get === 'function' ? req.headers.get('range') : (req.headers?.range || req.headers?.Range);
+    const requestedRange = rangeFor(rangeHeader, total);
     if (requestedRange?.invalid) {
       headers['Content-Range'] = `bytes */${total}`;
       return { statusCode: 416, headers, body: '' };

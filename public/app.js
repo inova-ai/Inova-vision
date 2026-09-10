@@ -250,8 +250,13 @@ cancel.onclick = async () => {
 
 async function refreshHealth() {
   try {
-    const r = await fetch(`/api/health?t=${Date.now()}`, { cache: "no-store" });
-    const x = await r.json();
+    const r = await fetch(`/api/health?t=${Date.now()}`, { cache: "no-store", headers: { "Accept": "application/json" } });
+    const raw = await r.text();
+    let x;
+    try { x = JSON.parse(raw); } catch {
+      throw new Error(`Backend retornou ${r.status} ${r.statusText} em /api/health, mas não enviou JSON. ${raw.slice(0, 120).replace(/\s+/g, " ")}`);
+    }
+    if (!r.ok) throw new Error(`Backend respondeu HTTP ${r.status}.`);
     if (!x.blobStorage) {
       engine.textContent = "SET NETLIFY BLOB";
       renderStep.textContent = "Vercel Blob belum terhubung. Pastikan BLOB_READ_WRITE_TOKEN sudah tersedia di Vercel.";

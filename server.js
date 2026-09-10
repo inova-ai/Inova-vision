@@ -67,7 +67,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "5.6.3",
+    version: "5.6.7",
     configured: Boolean(replicateToken),
     replicateTokenPresent: Boolean(replicateToken),
     replicateApiReachable,
@@ -85,6 +85,8 @@ app.get("/api/health", async (_req, res) => {
     blobError: blobCheck.error,
     scriptAI: Boolean(process.env.OPENAI_API_KEY),
     ready: Boolean(replicateToken) && replicateApiReachable && blobStorage && Boolean(process.env.OPENAI_API_KEY),
+    videoFallback: true,
+    videoFallbackMode: "local-image-motion",
     voiceAI: true,
     voiceProvider: "free-edge-tts",
     voiceConfigured: true

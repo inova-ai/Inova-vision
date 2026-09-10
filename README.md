@@ -1,4 +1,4 @@
-# INOVA VISION AI v5.6.1 — NETLIFY READY
+# INOVA VISION AI v5.6.7 — NETLIFY READY
 
 Versi ini dipindahkan dari Vercel ke Netlify. Tidak membutuhkan Vercel Blob atau @vercel/blob.
 
@@ -44,3 +44,6 @@ Netlify meneruskannya ke Background Function agar proses webhook dan FFmpeg tida
 3. Isi Environment Variables.
 4. Deploy ulang.
 5. Buka `/api/health` dan pastikan `version` 5.6.0, `blobStorage:true`, `scriptAI:true`, `configured:true`, dan `ready:true`.
+
+## Replicate credit fallback
+If Replicate returns HTTP 402 / Insufficient credit, the pipeline no longer marks the render as failed. It automatically renders each scene locally from the uploaded product image with a subtle camera-motion effect, uses the generated voiceover when available, then composes the final MP4 with subtitles, CTA, and music. This fallback does not generate new visual frames like an I2V model; it is a reliable no-credit fallback.

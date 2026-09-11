@@ -30,7 +30,7 @@ Aplikasi akan membuat bucket `inova-vision` jika belum ada dan memastikan bucket
 Untuk AI Video dan AI Photo 3-View, tambahkan:
 
 - `MAGIC_HOUR_API_KEY`
-- `MAGIC_HOUR_VIDEO_MODEL` (opsional, default `wan-2.2`)
+- `MAGIC_HOUR_VIDEO_MODEL` (opsional; V14.9 dikunci ke `kling-2.5`)
 - `MAGIC_HOUR_IMAGE_MODEL` (opsional, default `qwen-edit`)
 - `MAGIC_HOUR_IMAGE_RESOLUTION` (opsional, default `640px`)
 

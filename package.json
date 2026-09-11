@@ -1,6 +1,6 @@
 {
   "name": "inova-vision-vercel-v14.3-supabase",
-  "version": "6.9.4",
+  "version": "6.9.5",
   "private": true,
   "type": "module",
   "scripts": {

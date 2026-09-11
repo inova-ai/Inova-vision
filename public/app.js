@@ -160,7 +160,7 @@ async function poll() {
               return;
             }
           } catch (probeError) { console.warn("INOVA MP4 probe failed", probeError); }
-          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px"><div><b style="display:block;margin-bottom:8px">Video tidak dapat diputar</b><span>Server media tidak mengirim MP4 secara utuh. Periksa Vercel Blob dan deploy versi terbaru.</span></div></div>`;
+          videoBox.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;padding:24px;text-align:center;color:#fff;background:#080808;border-radius:14px"><div><b style="display:block;margin-bottom:8px">Video tidak dapat diputar</b><span>Server media tidak mengirim MP4 secara utuh. Periksa Supabase Storage dan deploy versi terbaru.</span></div></div>`;
         });
         videoBox.replaceChildren(video);
         video.load();
@@ -259,9 +259,9 @@ async function refreshHealth() {
       throw new Error(`Backend retornou ${r.status} ${r.statusText} em /api/health, mas não enviou JSON. ${raw.slice(0, 120).replace(/\s+/g, " ")}`);
     }
     if (!r.ok) throw new Error(`Backend respondeu HTTP ${r.status}.`);
-    if (!x.blobStorage) {
-      engine.textContent = "SET NETLIFY BLOB";
-      renderStep.textContent = "Vercel Blob belum terhubung. Pastikan BLOB_READ_WRITE_TOKEN sudah tersedia di Vercel.";
+    if (!x.supabaseStorage) {
+      engine.textContent = "SET SUPABASE STORAGE";
+      renderStep.textContent = "Supabase belum terhubung. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di Vercel.";
     } else {
       engine.textContent = "FREE EDITOR READY";
       renderStep.textContent = x.videoAIConfigured ? "AI Video Wan 2.2 tersedia · Auto akan fallback ke Local Free jika gagal/kuota habis." : "AI Video belum dikonfigurasi · Auto akan memakai Local Free. Tambahkan MAGIC_HOUR_API_KEY di Vercel jika ingin AI Video.";
@@ -333,7 +333,7 @@ photoAiGenerate?.addEventListener("click", async () => {
     dl.textContent = "⬇ Buka / Simpan Foto 3 View";
     wrap.append(img, dl);
     photoAiResult.replaceChildren(wrap);
-    photoAiStatus.textContent = `Selesai · ${data.model || "AI Image Editor"} · Blob hanya ${data.blobAdvancedOperations || 2} operasi advanced.`;
+    photoAiStatus.textContent = `Selesai · ${data.model || "AI Image Editor"} · tersimpan di Supabase Storage.`;
   }catch(e){
     photoAiResult.innerHTML = '<div class="photo-ai-empty">GAGAL<br><small></small></div>';
     photoAiResult.querySelector("small").textContent = e.message;

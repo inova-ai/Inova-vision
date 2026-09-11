@@ -160,6 +160,7 @@ async function createMagicHourImageToVideo({imageUrl, prompt, duration, job}) {
   if (!token) throw new Error("MAGIC_HOUR_API_KEY belum dikonfigurasi.");
   // Kling 2.5 is intentionally used for motion-heavy I2V. Magic Hour documents
   // it as strong for motion/action and reliable image-to-video control.
+  // Locked to Kling 2.5 for subscription compatibility.
   const model = "kling-2.5";
   const allowed = [5,10];
   const requested = Math.max(5, Math.min(10, Number(duration)||5));

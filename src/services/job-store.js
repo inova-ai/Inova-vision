@@ -1,4 +1,4 @@
-import { putBlob, readBlobJson } from './blob-store.js';
+import { putPrivateJson, readPrivateJson } from './blob-store.js';
 
 function jobPath(id) { return `jobs/${id}.json`; }
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -8,7 +8,7 @@ export async function saveJob(job) {
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await putBlob(jobPath(job.id), JSON.stringify(job, null, 2), 'application/json', { cacheControlMaxAge: 0 });
+      await putPrivateJson(jobPath(job.id), job);
       return job;
     } catch (error) {
       lastError = error;
@@ -24,7 +24,7 @@ export async function getJob(id) {
   // reporting a job as missing, so the UI never turns a transient read
   // into "Job tidak ditemukan".
   for (let attempt = 0; attempt < 8; attempt++) {
-    const job = await readBlobJson(jobPath(id));
+    const job = await readPrivateJson(jobPath(id));
     if (job) return job;
     if (attempt < 7) await sleep(200 + attempt * 150);
   }

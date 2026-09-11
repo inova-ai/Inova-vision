@@ -85,6 +85,33 @@ export async function getBlobUrl(pathname) {
   return result?.blob?.url || null;
 }
 
+export async function putPrivateJson(pathname, value) {
+  try {
+    const blob = await put(pathname, JSON.stringify(value, null, 2), {
+      access: 'private',
+      ...authOptions(),
+      contentType: 'application/json',
+      addRandomSuffix: false,
+      allowOverwrite: true,
+      cacheControlMaxAge: 0
+    });
+    return { url: blob.url, pathname: blob.pathname };
+  } catch (error) {
+    throw new Error(`Vercel Blob private job gagal disimpan: ${error?.message || error}`);
+  }
+}
+
+export async function readPrivateJson(pathname) {
+  try {
+    const result = await get(pathname, { access: 'private', ...authOptions(), useCache: false });
+    if (!result || result.statusCode !== 200 || !result.stream) return null;
+    return JSON.parse(await new Response(result.stream).text());
+  } catch (error) {
+    console.error('Private job read failed:', error?.message || error);
+    return null;
+  }
+}
+
 export async function readBlobJson(pathname) {
   try { return await getBlob(pathname, 'json'); } catch { return null; }
 }

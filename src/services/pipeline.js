@@ -220,8 +220,9 @@ function buildI2VPrompt(job, scene){
     `Style: ${job.style||"ugc"}.`,
     "Preserve the exact product identity, geometry, proportions, colors, materials, packaging, logo placement and all visible text from the source image.",
     "The product must remain the same physical object throughout the clip. Do not redesign, replace, morph, duplicate or invent product details.",
-    "Use motion mainly through subtle realistic camera movement, depth/parallax, natural hand/environment motion only when already implied by the source.",
-    "Keep branding and labels stable and readable. No warped text, no extra fingers, no extra products, no floating objects, no surreal motion.",
+    "Animate the main subject as a living person, not as a still image: natural body movement, subtle weight shift, head and eye movement, realistic arm and hand movement, natural posture changes, and when the subject is a person wearing the product, allow a small natural step or turn so the clothing moves with the body.",
+    "Prioritize subject motion over camera shake or zoom. The camera should stay smooth and stable with only gentle cinematic movement; do not create artificial vibration, jitter, or repeated shaking.",
+    "Keep branding and labels stable and readable. No warped text, no extra fingers, no extra products, no floating objects, no surreal motion, no frozen mannequin-like subject.",
     "Photorealistic commercial video, physically plausible motion, stable exposure, natural shadows, clean social-commerce look."
   ].join(" ");
 }

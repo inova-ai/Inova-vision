@@ -2,10 +2,7 @@
 // Server-side only: SUPABASE_SERVICE_ROLE_KEY must never be exposed to the browser.
 
 function config(){
-  let url = String(process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
-  // Accept a project URL even if it was copied from an API/REST screen.
-  // SUPABASE_URL must be the project root, not /rest/v1 or another service path.
-  url = url.replace(/\/(?:rest\/v1|storage\/v1|auth\/v1)\/?$/i, '');
+  const url = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'inova-vision';
   return { url, key, bucket };
@@ -50,17 +47,6 @@ export async function ensureStorageBucket(){
   bucketReady = (async()=>{
     const {url,key,bucket} = config();
     if(!url || !key) throw new Error('Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di Vercel.');
-    // The bucket is normally created manually in Supabase. Check it first so
-    // startup does not issue a create request on every cold start.
-    const check = await fetch(`${url}/storage/v1/bucket/${encodeURIComponent(bucket)}`, {
-      method:'GET', headers:headers({'Accept':'application/json'})
-    });
-    if(check.ok) return true;
-    if(check.status !== 404){
-      const checkText = await check.text().catch(()=>"");
-      throw new Error(`Supabase Storage bucket check gagal HTTP ${check.status}: ${checkText.slice(0,500)}`);
-    }
-
     const res = await fetch(`${url}/storage/v1/bucket`, {
       method:'POST',
       headers:headers({'Content-Type':'application/json'}),
@@ -69,6 +55,8 @@ export async function ensureStorageBucket(){
     if(res.ok) return true;
     const text = await res.text().catch(()=>"");
     if(/already exists|duplicate|Bucket already exists/i.test(text)){
+      // Keep an existing bucket public because Magic Hour and the browser need
+      // a fetchable URL. If it is already public this is a harmless no-op.
       const update = await fetch(`${url}/storage/v1/bucket/${encodeURIComponent(bucket)}`, {
         method:'PUT', headers:headers({'Content-Type':'application/json'}), body:JSON.stringify({public:true})
       });

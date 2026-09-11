@@ -55,6 +55,7 @@ const cta = document.querySelector("#cta");
 const music = document.querySelector("#music");
 const duration = document.querySelector("#duration");
 const videoEngine = document.querySelector("#videoEngine");
+const voiceEnabled = document.querySelector("#voiceEnabled");
 const generate = document.querySelector("#generate");
 const cancel = document.querySelector("#cancel");
 const bar = document.querySelector("#bar");
@@ -127,7 +128,7 @@ async function poll() {
       resultBadge.textContent = "COMPLETED";
       blueprint.textContent = j.sourceType === "video"
         ? `Edit video · ${j.duration || duration.value}s · prompt diterapkan: ${j.customPrompt || "auto"} · format 9:16 · MP4 kompatibel Android/Chrome.`
-        : `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · engine ${j.engine || "auto"} · prompt + AI shot planning aktif · ${j.productName || "Product"}.`;
+        : `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · engine ${j.engine || "auto"} · ${j.voiceEnabled === false ? "voice-over OFF" : "voice-over Indonesia ON"} · prompt + AI shot planning aktif · ${j.productName || "Product"}.`;
       const videoBox = document.querySelector(".video-box");
       if (j.outputUrl) {
         // Use a real <source> element and force the browser to reload the URL.
@@ -137,6 +138,7 @@ async function poll() {
         video.controls = true;
         video.playsInline = true;
         video.preload = "auto";
+        video.muted = localStorage.getItem("inovaSound") === "off";
         video.setAttribute("webkit-playsinline", "true");
         video.style.cssText = "width:100%;height:100%;object-fit:contain;border-radius:14px;background:#000";
         const source = document.createElement("source");
@@ -168,6 +170,31 @@ async function poll() {
         videoBox.textContent = "VIDEO SELESAI";
       }
       if (j.outputUrl) {
+        let soundToggle = document.querySelector("#soundToggle");
+        if (!soundToggle) {
+          soundToggle = document.createElement("button");
+          soundToggle.id = "soundToggle";
+          soundToggle.type = "button";
+          soundToggle.className = "sound-toggle";
+          result.querySelector(".result-info").appendChild(soundToggle);
+        }
+        const syncSoundButton = () => {
+          const currentVideo = document.querySelector(".video-box video");
+          const muted = !currentVideo || currentVideo.muted;
+          soundToggle.textContent = muted ? "🔇 Suara OFF" : "🔊 Suara ON";
+          soundToggle.classList.toggle("is-off", muted);
+          soundToggle.setAttribute("aria-pressed", String(!muted));
+          soundToggle.title = muted ? "Nyalakan suara video" : "Matikan suara video";
+        };
+        soundToggle.onclick = () => {
+          const currentVideo = document.querySelector(".video-box video");
+          if (!currentVideo) return;
+          currentVideo.muted = !currentVideo.muted;
+          localStorage.setItem("inovaSound", currentVideo.muted ? "off" : "on");
+          syncSoundButton();
+        };
+        syncSoundButton();
+
         let dl = document.querySelector("#downloadVideo");
         if (!dl) {
           dl = document.createElement("a");
@@ -215,6 +242,7 @@ generate.onclick = async () => {
   fd.append("style", selectedStyle);
   fd.append("duration", duration.value);
     fd.append("videoEngine", videoEngine?.value || "auto");
+  fd.append("voiceEnabled", voiceEnabled?.value === "off" ? "off" : "on");
   fd.append("cta", cta.value);
   fd.append("customPrompt", promptInput?.value || "");
   if (music.files[0]) fd.append("music", music.files[0]);

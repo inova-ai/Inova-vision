@@ -19,3 +19,5 @@
 .photo-ai-result .photo-ai-result-wrap img{min-height:0;height:auto;max-height:520px;border-radius:12px}
 .photo-ai-result .photo-ai-download{display:inline-flex;justify-content:center;text-decoration:none}
 @media(max-width:900px){.photo-ai-grid{grid-template-columns:1fr}.photo-ai-preview,.photo-ai-result{min-height:260px}}
+
+.sound-toggle{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:10px;margin-right:8px;border:1px solid #4a4235;border-radius:11px;padding:11px 14px;background:#15130f;color:#f0d9a4;font-weight:800;cursor:pointer}.sound-toggle.is-off{color:#aaa;background:#0d0d0f;border-color:#333238}.sound-toggle:active{transform:translateY(1px)}

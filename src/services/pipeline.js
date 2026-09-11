@@ -291,7 +291,8 @@ async function renderAiScene(job, sceneIndex){
     await downloadFile(outputUrl,aiPath);
     await validateMedia(aiPath,`AI video scene ${sceneIndex+1}`);
     let voice=scene.voice||null;
-    if(!voice){
+    if(!job.voiceEnabled) voice=null;
+    else if(!voice){
       voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
     }
     if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
@@ -327,7 +328,8 @@ async function renderMagicHourScene(job, sceneIndex){
     await downloadFile(ai.outputUrl,aiPath);
     await validateMedia(aiPath,`AI video scene ${sceneIndex+1}`);
     let voice=scene.voice||null;
-    if(!voice){
+    if(!job.voiceEnabled) voice=null;
+    else if(!voice){
       voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
     }
     if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
@@ -363,7 +365,8 @@ async function renderLocalScene(job, sceneIndex){
     else await downloadFile(imageUrl,imagePath);
     await validateMedia(imagePath,`Foto scene ${sceneIndex+1}`);
     let voice=scene.voice||null;
-    if(!voice){
+    if(!job.voiceEnabled) voice=null;
+    else if(!voice){
       voice=await createVoiceover({
         text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),
         jobId:job.id,sceneIndex,targetSeconds:scene.duration
@@ -490,7 +493,7 @@ async function compose(job){
   } finally {}
 }
 
-export async function createPipelineJob({photos=[],videoFile=null,musicFile,productName,style,duration,cta,customPrompt="",baseUrl,videoEngine="auto"}){
+export async function createPipelineJob({photos=[],videoFile=null,musicFile,productName,style,duration,cta,customPrompt="",baseUrl,videoEngine="auto",voiceEnabled=true}){
   const id=crypto.randomUUID();
   let total=Number(duration)||15;
   const sourceType=videoFile ? "video" : "photo";
@@ -529,7 +532,7 @@ export async function createPipelineJob({photos=[],videoFile=null,musicFile,prod
   }
   const job={
     id,status:"queued",progress:3,step:selectedVideoEngine === "ai" ? "Job dibuat · AI Video Generator siap merender" : "Job dibuat · Free Motion Engine siap merender",
-    productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",customPrompt:String(customPrompt||""),prompt,sourceType,videoEngine:selectedVideoEngine,
+    productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",customPrompt:String(customPrompt||""),prompt,sourceType,videoEngine:selectedVideoEngine,voiceEnabled:Boolean(voiceEnabled),
     storyboard,sceneCount:sourceType==="video"?1:storyboard.length,musicUrl,musicPathname,musicLocalPath,musicName:musicFile?.originalname||"",
     imageUrl:photoRecords[0]?.imageUrl,imageDataUri:null,sourcePhotoCount:photos.length,photos:photoRecords,sourceVideo,
     scenes:sourceType==="video"

@@ -43,32 +43,14 @@ export function supabasePublicUrl(pathname){
 }
 
 export async function ensureStorageBucket(){
-  if(bucketReady) return bucketReady;
-  bucketReady = (async()=>{
-    const {url,key,bucket} = config();
-    if(!url || !key) throw new Error('Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di Vercel.');
-    const res = await fetch(`${url}/storage/v1/bucket`, {
-      method:'POST',
-      headers:headers({'Content-Type':'application/json'}),
-      body:JSON.stringify({id:bucket,name:bucket,public:true,file_size_limit:50*1024*1024})
-    });
-    if(res.ok) return true;
-    const text = await res.text().catch(()=>"");
-    if(/already exists|duplicate|Bucket already exists/i.test(text)){
-      // Keep an existing bucket public because Magic Hour and the browser need
-      // a fetchable URL. If it is already public this is a harmless no-op.
-      const update = await fetch(`${url}/storage/v1/bucket/${encodeURIComponent(bucket)}`, {
-        method:'PUT', headers:headers({'Content-Type':'application/json'}), body:JSON.stringify({public:true})
-      });
-      if(!update.ok){
-        const updateText=await update.text().catch(()=>"");
-        throw new Error(`Supabase bucket harus Public. Gagal mengubah bucket HTTP ${update.status}: ${updateText.slice(0,500)}`);
-      }
-      return true;
-    }
-    throw new Error(`Supabase Storage bucket gagal dibuat HTTP ${res.status}: ${text.slice(0,500)}`);
-  })().catch(error=>{bucketReady=null;throw error;});
-  return bucketReady;
+  // The bucket is created once from Supabase Dashboard.
+  // Do not call the bucket-create endpoint on every job: some Supabase
+  // project API configurations route that path through PostgREST and return
+  // PGRST125 even though the existing Storage bucket is valid.
+  const {url,key,bucket} = config();
+  if(!url || !key) throw new Error('Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di Vercel.');
+  if(!bucket) throw new Error('SUPABASE_STORAGE_BUCKET belum diisi.');
+  return true;
 }
 
 export async function uploadStorage(pathname, data, contentType){

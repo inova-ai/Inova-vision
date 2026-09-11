@@ -1,1 +1,1 @@
-INOVA VISION AI v14.6.1 - Supabase Storage ROBUST FIX / Voice-over ON-OFF
+v14.7 — Supabase robust storage + Kling 2.5 motion fix

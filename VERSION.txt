@@ -1,1 +1,1 @@
-v14.7 — Supabase robust storage + Kling 2.5 motion fix
+INOVA VISION AI v14.8 — Kling 2.5 Motion / No Silent Fallback

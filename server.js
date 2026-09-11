@@ -31,7 +31,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.9.3-kling-motion",
+    version: "6.9.4-kling-no-fallback-motion",
     engine: "local-free-motion",
     configured: supabase.configured,
     storageProvider: "supabase",

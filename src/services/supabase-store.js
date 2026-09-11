@@ -2,9 +2,27 @@
 // Server-side only: SUPABASE_SERVICE_ROLE_KEY must never be exposed to the browser.
 
 function config(){
-  const url = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'inova-vision';
+  // SUPABASE_URL must resolve to the project root, not /rest/v1 or /storage/v1.
+  // Normalise it here so an incorrectly pasted dashboard URL cannot create
+  // malformed Storage URLs such as .../rest/v1/storage/v1/...
+  let rawUrl = String(process.env.SUPABASE_URL || '').trim();
+  let url = rawUrl.replace(/\/+$/, '');
+  try {
+    const parsed = new URL(url);
+    parsed.pathname = '';
+    parsed.search = '';
+    parsed.hash = '';
+    url = parsed.toString().replace(/\/+$/, '');
+  } catch {
+    url = url
+      .replace(/\/rest\/v1(?:\/.*)?$/i, '')
+      .replace(/\/storage\/v1(?:\/.*)?$/i, '')
+      .replace(/\/auth\/v1(?:\/.*)?$/i, '')
+      .replace(/\/+$/, '');
+  }
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const bucket = String(process.env.SUPABASE_STORAGE_BUCKET || 'inova-vision')
+    .trim().replace(/^\/+|\/+$/g, '');
   return { url, key, bucket };
 }
 
@@ -26,6 +44,17 @@ export function getSupabaseInfo(){
 function headers(extra={}){
   const {key} = config();
   return { Authorization:`Bearer ${key}`, apikey:key, ...extra };
+}
+
+function storageObjectUrl(pathname){
+  const {url,bucket} = config();
+  const cleanPath = String(pathname || '').replace(/^\/+/, '');
+  if(!url) throw new Error('SUPABASE_URL kosong atau tidak valid.');
+  if(!bucket) throw new Error('SUPABASE_STORAGE_BUCKET kosong.');
+  if(!cleanPath) throw new Error('Path file Supabase Storage kosong.');
+  const encodedBucket = encodeURIComponent(bucket);
+  const encodedPath = cleanPath.split('/').map(encodeURIComponent).join('/');
+  return `${url}/storage/v1/object/${encodedBucket}/${encodedPath}`;
 }
 
 

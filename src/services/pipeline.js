@@ -146,7 +146,58 @@ function motionFilter(sceneIndex, duration){
 }
 
 function aiVideoEnabled(){
-  return Boolean(process.env.REPLICATE_API_TOKEN);
+  return Boolean(process.env.MAGIC_HOUR_API_KEY);
+}
+
+function videoEngineConfigured(engine) {
+  if (engine === "local") return false;
+  return aiVideoEnabled();
+}
+
+async function createMagicHourImageToVideo({imageUrl, prompt, duration, job}) {
+  const token = process.env.MAGIC_HOUR_API_KEY;
+  if (!token) throw new Error("MAGIC_HOUR_API_KEY belum dikonfigurasi.");
+  const allowed = [3,4,5,6,7,8,9,10,15];
+  const requested = Math.max(3, Math.min(15, Number(duration)||5));
+  const endSeconds = allowed.reduce((best, n) => Math.abs(n-requested) < Math.abs(best-requested) ? n : best, allowed[0]);
+  const body = {
+    name: `INOVA VISION ${job.id} scene`,
+    end_seconds: endSeconds,
+    model: process.env.MAGIC_HOUR_VIDEO_MODEL || "wan-2.2",
+    resolution: process.env.MAGIC_HOUR_VIDEO_RESOLUTION || "480p",
+    audio: false,
+    style: { prompt },
+    assets: { image_file_path: imageUrl }
+  };
+  const create = await fetch("https://api.magichour.ai/v1/image-to-video", {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const created = await create.json().catch(() => ({}));
+  if (!create.ok) {
+    const msg = created?.message || created?.error?.message || created?.code || JSON.stringify(created).slice(0, 400);
+    throw new Error(`Magic Hour HTTP ${create.status}: ${msg}`);
+  }
+  if (!created.id) throw new Error("Magic Hour tidak mengembalikan project id.");
+
+  let latest = null;
+  for (let i=0; i<90; i++) {
+    await new Promise(r => setTimeout(r, 2500));
+    const status = await fetch(`https://api.magichour.ai/v1/video-projects/${encodeURIComponent(created.id)}`, {
+      headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" }
+    });
+    latest = await status.json().catch(() => ({}));
+    if (!status.ok) throw new Error(`Magic Hour status HTTP ${status.status}`);
+    if (["complete","error","canceled"].includes(latest.status)) break;
+  }
+  if (latest?.status !== "complete") {
+    const msg = latest?.error?.message || latest?.error || latest?.status || "timeout";
+    throw new Error(`Magic Hour generation ${latest?.status || "timeout"}: ${typeof msg === "string" ? msg : JSON.stringify(msg).slice(0, 500)}`);
+  }
+  const outputUrl = latest?.downloads?.[0]?.url;
+  if (!outputUrl) throw new Error("Magic Hour selesai tetapi URL video tidak ditemukan.");
+  return { outputUrl, duration: Number(latest.end_seconds)||endSeconds, credits: latest.credits_charged, projectId: created.id };
 }
 
 function absolutePublicUrl(job, url){
@@ -255,6 +306,42 @@ async function renderAiScene(job, sceneIndex){
     if(probe.duration<Math.max(0.5,duration*0.75)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
     const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
     return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"ai-i2v",aiProvider:"replicate",aiModel:process.env.REPLICATE_I2V_MODEL||"wavespeedai/wan-2.1-i2v-480p"};
+  }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
+}
+
+async function renderMagicHourScene(job, sceneIndex){
+  const scene=job.scenes[sceneIndex];
+  const selected=job.photos?.[Number(scene?.imageIndex)||0]||job.photos?.[0]||{};
+  const imageUrl=absolutePublicUrl(job,selected.imageUrl||job.imageUrl);
+  if(!imageUrl) throw new Error(`URL foto produk untuk scene ${sceneIndex+1} tidak tersedia.`);
+  const duration=Math.max(3,Math.min(15,Number(scene.duration)||5));
+  const prompt=buildI2VPrompt(job,scene);
+  const ai=await createMagicHourImageToVideo({imageUrl,prompt,duration,job});
+  const dir=await jobTmp(job.id);
+  const aiPath=path.join(dir,`magic-${sceneIndex}.mp4`);
+  const voicePath=path.join(dir,`voice-${sceneIndex}.mp3`);
+  const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`);
+  try{
+    await downloadFile(ai.outputUrl,aiPath);
+    await validateMedia(aiPath,`AI video scene ${sceneIndex+1}`);
+    let voice=scene.voice||null;
+    if(!voice){
+      voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
+    }
+    if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    else if(voice?.url) await downloadFile(voice.url,voicePath);
+    if(voice&&(voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
+    const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
+    const hasVoice=Boolean(voice&&(voice.pathname||voice.url));
+    const args=hasVoice
+      ? ["-y","-i",aiPath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration},atrim=0:${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath]
+      : ["-y","-i",aiPath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath];
+    await runFfmpeg(args);
+    await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
+    const probe=await probeMedia(scenePath);
+    if(probe.duration<Math.max(0.5,duration*0.65)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
+    const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
+    return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:process.env.MAGIC_HOUR_VIDEO_MODEL||"wan-2.2",aiCredits:ai.credits,aiProjectId:ai.projectId};
   }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
@@ -400,7 +487,7 @@ async function compose(job){
   } finally {await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
-export async function createPipelineJob({photos=[],videoFile=null,musicFile,productName,style,duration,cta,customPrompt="",baseUrl}){
+export async function createPipelineJob({photos=[],videoFile=null,musicFile,productName,style,duration,cta,customPrompt="",baseUrl,videoEngine="auto"}){
   const id=crypto.randomUUID();
   let total=Number(duration)||15;
   const sourceType=videoFile ? "video" : "photo";
@@ -428,15 +515,16 @@ export async function createPipelineJob({photos=[],videoFile=null,musicFile,prod
     musicUrl=blob.url;
     musicPathname=blob.pathname;
   }
+  const selectedVideoEngine = videoEngine === "ai" ? "ai" : videoEngine === "local" ? "local" : (aiVideoEnabled() ? "ai" : "local");
   const job={
-    id,status:"queued",progress:3,step:"Job dibuat · Free Motion Engine siap merender",
-    productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",customPrompt:String(customPrompt||""),prompt,sourceType,
+    id,status:"queued",progress:3,step:selectedVideoEngine === "ai" ? "Job dibuat · AI Video Generator siap merender" : "Job dibuat · Free Motion Engine siap merender",
+    productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",customPrompt:String(customPrompt||""),prompt,sourceType,videoEngine:selectedVideoEngine,
     storyboard,sceneCount:sourceType==="video"?1:storyboard.length,musicUrl,musicPathname,musicName:musicFile?.originalname||"",
     imageUrl:photoRecords[0]?.imageUrl,imageDataUri:null,sourcePhotoCount:photos.length,photos:photoRecords,sourceVideo,
     scenes:sourceType==="video"
       ? [{scene:1,title:"Video Edit",duration:total,status:"queued",progress:0,script:"",imageIndex:0,shot:null,attempt:0,renderMode:"local-video-edit"}]
       : storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0,renderMode:"local-free-motion"})),
-    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:sourceType==="video"?"local-video-edit":"local-free-motion"
+    createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:sourceType==="video"?"local-video-edit":selectedVideoEngine==="ai"?"ai-video":"local-free-motion"
   };
   await saveJob(job);return getJob(id);
 }
@@ -455,19 +543,34 @@ export async function processPipelineJob(jobId){
     for(let i=0;i<job.sceneCount;i++){
       job=await getJob(jobId);
       if(job.status==="failed") throw new Error(job.step||"Job gagal.");
-      await updateJob(jobId,{status:"rendering",progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:`Render free motion scene ${i+1}/${job.sceneCount}`});
-      const result=await renderLocalScene(job,i);
+      const wantsAI = job.videoEngine === "ai" && aiVideoEnabled();
+      await updateJob(jobId,{status:"rendering",progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`AI Video scene ${i+1}/${job.sceneCount} · Wan 2.2`:`Render free motion scene ${i+1}/${job.sceneCount}`});
+      let result;
+      let usedAI = false;
+      if(wantsAI){
+        try {
+          result = await renderMagicHourScene(job,i);
+          usedAI = true;
+        } catch(aiError) {
+          console.error(`AI video scene ${i+1} gagal, fallback Local Free:`, aiError?.stack||aiError);
+          await updateJob(jobId,{step:`AI scene ${i+1} gagal · otomatis pindah ke Local Free`});
+          result = await renderLocalScene(job,i);
+          result = {...result,aiFallback:true,aiFallbackReason:aiError?.message||"AI generation failed"};
+        }
+      } else {
+        result = await renderLocalScene(job,i);
+      }
       job=await getJob(jobId);
       const scenes=[...job.scenes];
-      scenes[i]={...scenes[i],...result,status:"completed",progress:100,renderMode:"local-free-motion"};
-      await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · free motion`,status:i+1===job.sceneCount?"composing":"rendering"});
+      scenes[i]={...scenes[i],...result,status:"completed",progress:100,renderMode:usedAI?"ai-video":"local-free-motion"};
+      await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · ${usedAI?"AI Video":"Local Free"}`,status:i+1===job.sceneCount?"composing":"rendering"});
     }
     job=await getJob(jobId);
     await updateJob(jobId,{status:"composing",progress:92,step:"Menyusun video final · audio + video"});
     const finalUrl=await compose(await getJob(jobId));
-    return updateJob(jobId,{status:"completed",progress:100,step:"Video final selesai · 100% free local motion",outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:"local-free-motion",engine:"local-free-motion"});
+    return updateJob(jobId,{status:"completed",progress:100,step:`Video final selesai · ${job.videoEngine==="ai"?"AI Video + fallback Local Free":"100% free local motion"}`,outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:job.videoEngine==="ai"?"ai-video":"local-free-motion",engine:job.videoEngine==="ai"?"ai-video":"local-free-motion"});
   }catch(e){
-    await updateJob(jobId,{status:"failed",progress:0,step:`Free renderer gagal: ${e?.message||"Unknown error"}`});
+    await updateJob(jobId,{status:"failed",progress:0,step:`Video renderer gagal: ${e?.message||"Unknown error"}`});
     throw e;
   }
 }

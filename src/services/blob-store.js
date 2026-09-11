@@ -85,31 +85,38 @@ export async function getBlobUrl(pathname) {
   return result?.blob?.url || null;
 }
 
-export async function putPrivateJson(pathname, value) {
+export async function putJobJson(prefix, value) {
   try {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const pathname = `${prefix}${stamp}.json`;
     const blob = await put(pathname, JSON.stringify(value, null, 2), {
-      access: 'private',
-      ...authOptions(),
+      ...options('public'),
       contentType: 'application/json',
       addRandomSuffix: false,
-      allowOverwrite: true,
-      cacheControlMaxAge: 0
+      allowOverwrite: false,
+      // Job records are immutable, so CDN caching is safe.
+      cacheControlMaxAge: 60
     });
     return { url: blob.url, pathname: blob.pathname };
   } catch (error) {
-    throw new Error(`Vercel Blob private job gagal disimpan: ${error?.message || error}`);
+    throw new Error(`Vercel Blob job gagal disimpan: ${error?.message || error}`);
   }
 }
 
-export async function readPrivateJson(pathname) {
-  try {
-    const result = await get(pathname, { access: 'private', ...authOptions(), useCache: false });
-    if (!result || result.statusCode !== 200 || !result.stream) return null;
-    return JSON.parse(await new Response(result.stream).text());
-  } catch (error) {
-    console.error('Private job read failed:', error?.message || error);
-    return null;
-  }
+export async function readJobJson(prefix) {
+  const result = await list({ prefix, limit: 1000, ...authOptions() });
+  const blobs = Array.isArray(result?.blobs) ? result.blobs : [];
+  if (!blobs.length) return null;
+
+  // Vercel Blob lists pathnames lexicographically. Our pathname starts with
+  // a millisecond timestamp, so the last entry is the newest job snapshot.
+  blobs.sort((a, b) => String(a.pathname).localeCompare(String(b.pathname)));
+  const latest = blobs[blobs.length - 1];
+  if (!latest?.pathname) return null;
+
+  const data = await get(latest.pathname, { ...options('public'), useCache: false });
+  if (!data || data.statusCode !== 200 || !data.stream) return null;
+  return JSON.parse(await new Response(data.stream).text());
 }
 
 export async function readBlobJson(pathname) {

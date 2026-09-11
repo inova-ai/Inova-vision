@@ -1,6 +1,6 @@
-import { putPrivateJson, readPrivateJson } from './blob-store.js';
+import { putJobJson, readJobJson } from './blob-store.js';
 
-function jobPath(id) { return `jobs/${id}.json`; }
+function jobPrefix(id) { return `jobs/${id}/`; }
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function saveJob(job) {
@@ -8,7 +8,10 @@ export async function saveJob(job) {
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await putPrivateJson(jobPath(job.id), job);
+      // Jobs use immutable public Blob objects instead of overwriting one
+      // pathname. This works with the user's existing PUBLIC Blob store and
+      // avoids CDN cache/overwrite consistency problems.
+      await putJobJson(jobPrefix(job.id), job);
       return job;
     } catch (error) {
       lastError = error;
@@ -20,13 +23,16 @@ export async function saveJob(job) {
 
 export async function getJob(id) {
   if (!id) return null;
-  // Blob reads can briefly lag immediately after a write. Retry before
-  // reporting a job as missing, so the UI never turns a transient read
-  // into "Job tidak ditemukan".
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const job = await readPrivateJson(jobPath(id));
-    if (job) return job;
-    if (attempt < 7) await sleep(200 + attempt * 150);
+  // Each update is a new immutable blob. We list only this job's prefix and
+  // read the newest pathname, so no mutable JSON blob can remain stale in CDN.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const job = await readJobJson(jobPrefix(id));
+      if (job) return job;
+    } catch (error) {
+      console.error('Job read failed:', error?.message || error);
+    }
+    if (attempt < 9) await sleep(200 + attempt * 150);
   }
   return null;
 }

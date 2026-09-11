@@ -1,1 +1,1 @@
-INOVA VISION 6.3.5-private-job-store-fix
+INOVA VISION 6.3.6-public-versioned-job-store-fix

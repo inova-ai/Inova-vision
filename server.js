@@ -32,7 +32,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.3.5-private-job-store-fix",
+    version: "6.3.6-public-versioned-job-store-fix",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,

@@ -16,6 +16,7 @@ import ffmpegPath from "ffmpeg-static";
 // OPENAI_API_KEY is configured, deterministic local scripts/shots are used.
 const TMP_ROOT = "/tmp/inova-vision";
 async function jobTmp(id){const dir=path.join(TMP_ROOT,id);await fs.mkdir(dir,{recursive:true});return dir;}
+async function cleanupJobTmp(id){await fs.rm(path.join(TMP_ROOT,id),{recursive:true,force:true}).catch(()=>{});await fs.rm(path.join("/tmp/inova-voice",id),{recursive:true,force:true}).catch(()=>{});}
 function runFfmpeg(args){return new Promise((resolve,reject)=>{const ff=spawn(ffmpegPath,args);let err="";ff.stderr.on("data",d=>err+=d.toString());ff.on("close",c=>c===0?resolve():reject(new Error(`FFmpeg gagal: ${err.slice(-1800)}`)));ff.on("error",e=>reject(e));});}
 async function downloadFile(url,target){
   const r=await fetch(url);
@@ -292,11 +293,12 @@ async function renderAiScene(job, sceneIndex){
     if(!voice){
       voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
     }
-    if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
+    else if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
     else if(voice?.url) await downloadFile(voice.url,voicePath);
-    if(voice&&(voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
+    if(voice&&(voice._localPath||voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
     const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
-    const hasVoice=Boolean(voice&&(voice.pathname||voice.url));
+    const hasVoice=Boolean(voice&&(voice._localPath||voice.pathname||voice.url));
     const args=hasVoice
       ? ["-y","-i",aiPath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration},atrim=0:${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath]
       : ["-y","-i",aiPath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath];
@@ -304,9 +306,8 @@ async function renderAiScene(job, sceneIndex){
     await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
     const probe=await probeMedia(scenePath);
     if(probe.duration<Math.max(0.5,duration*0.75)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
-    const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
-    return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"ai-i2v",aiProvider:"replicate",aiModel:process.env.REPLICATE_I2V_MODEL||"wavespeedai/wan-2.1-i2v-480p"};
-  }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
+    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"ai-i2v",aiProvider:"replicate",aiModel:process.env.REPLICATE_I2V_MODEL||"wavespeedai/wan-2.1-i2v-480p"};
+  } finally {}
 }
 
 async function renderMagicHourScene(job, sceneIndex){
@@ -328,11 +329,12 @@ async function renderMagicHourScene(job, sceneIndex){
     if(!voice){
       voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
     }
-    if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
+    else if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
     else if(voice?.url) await downloadFile(voice.url,voicePath);
-    if(voice&&(voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
+    if(voice&&(voice._localPath||voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
     const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
-    const hasVoice=Boolean(voice&&(voice.pathname||voice.url));
+    const hasVoice=Boolean(voice&&(voice._localPath||voice.pathname||voice.url));
     const args=hasVoice
       ? ["-y","-i",aiPath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration},atrim=0:${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath]
       : ["-y","-i",aiPath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","21","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath];
@@ -340,23 +342,23 @@ async function renderMagicHourScene(job, sceneIndex){
     await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
     const probe=await probeMedia(scenePath);
     if(probe.duration<Math.max(0.5,duration*0.65)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
-    const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
-    return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:process.env.MAGIC_HOUR_VIDEO_MODEL||"wan-2.2",aiCredits:ai.credits,aiProjectId:ai.projectId};
-  }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
+    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:process.env.MAGIC_HOUR_VIDEO_MODEL||"wan-2.2",aiCredits:ai.credits,aiProjectId:ai.projectId};
+  } finally {}
 }
 
 async function renderLocalScene(job, sceneIndex){
   const scene=job.scenes[sceneIndex];
   const selected=job.photos?.[Number(scene?.imageIndex)||0]||job.photos?.[0]||{};
   const imageUrl=selected.imageUrl||job.imageUrl;
-  if(!imageUrl) throw new Error(`Foto produk untuk scene ${sceneIndex+1} tidak tersedia.`);
+  if(!selected._localPath && !imageUrl) throw new Error(`Foto produk untuk scene ${sceneIndex+1} tidak tersedia.`);
 
   const dir=await jobTmp(job.id);
   const imagePath=path.join(dir,`image-${sceneIndex}.jpg`);
   const voicePath=path.join(dir,`voice-${sceneIndex}.mp3`);
   const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`);
   try {
-    if(selected.imagePath) await materializeBlob(selected.imagePath,imagePath);
+    if(selected._localPath) await fs.copyFile(selected._localPath,imagePath);
+    else if(selected.imagePath) await materializeBlob(selected.imagePath,imagePath);
     else await downloadFile(imageUrl,imagePath);
     await validateMedia(imagePath,`Foto scene ${sceneIndex+1}`);
     let voice=scene.voice||null;
@@ -366,9 +368,10 @@ async function renderLocalScene(job, sceneIndex){
         jobId:job.id,sceneIndex,targetSeconds:scene.duration
       });
     }
-    if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
+    else if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
     else if(voice?.url) await downloadFile(voice.url,voicePath);
-    if(voice && (voice.pathname || voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
+    if(voice && (voice._localPath || voice.pathname || voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
 
     const duration=Math.max(1,Number(scene.duration)||5);
     // IMPORTANT: the image itself must be the looping input. The previous
@@ -378,7 +381,7 @@ async function renderLocalScene(job, sceneIndex){
     // Keep the video input first and loop it explicitly for the full duration.
     const extraPromptFilters=promptVideoFilter(job.customPrompt);
     const vf=`scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,${motionFilter(sceneIndex,duration)}${extraPromptFilters.length?","+extraPromptFilters.join(","):""},format=yuv420p`;
-    const hasVoice=Boolean(voice && (voice.pathname || voice.url));
+    const hasVoice=Boolean(voice && (voice._localPath || voice.pathname || voice.url));
     const args=hasVoice
       ? ["-y","-loop","1","-framerate","30","-i",imagePath,"-i",voicePath,"-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-af",`apad=pad_dur=${duration}`,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath]
       : ["-y","-loop","1","-framerate","30","-i",imagePath,"-f","lavfi","-i","anullsrc=channel_layout=stereo:sample_rate=44100","-t",String(duration),"-map","0:v:0","-map","1:a:0","-vf",vf,"-c:v","libx264","-profile:v","main","-level","3.1","-pix_fmt","yuv420p","-preset","veryfast","-crf","23","-c:a","aac","-ar","44100","-ac","2","-b:a","96k","-movflags","+faststart","-avoid_negative_ts","make_zero","-video_track_timescale","90000",scenePath];
@@ -388,20 +391,17 @@ async function renderLocalScene(job, sceneIndex){
     if(probe.duration < Math.max(0.5,duration*0.8) || probe.videoFrames < 2){
       throw new Error(`Scene ${sceneIndex+1} menghasilkan video tidak lengkap: durasi ${probe.duration.toFixed(2)}s, frame ${probe.videoFrames}.`);
     }
-    const blob=await putBlob(`outputs/${job.id}/scene-${sceneIndex}.mp4`,await fs.readFile(scenePath),"video/mp4",{cacheControlMaxAge:86400});
-    return {outputUrl:blob.url,outputPathname:blob.pathname,voice,renderMode:"local-free"};
-  } finally {
-    await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});
-  }
+    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"local-free"};
+  } finally {}
 }
 
 async function renderVideoEdit(job){
-  if(!job.sourceVideo?.pathname) throw new Error("Video sumber tidak ditemukan.");
+  if(!job.sourceVideo?._localPath && !job.sourceVideo?.pathname) throw new Error("Video sumber tidak ditemukan.");
   const dir=await jobTmp(job.id);
   const inputPath=path.join(dir,"source-video");
   const outputPath=path.join(dir,"edited.mp4");
   try{
-    await materializeBlob(job.sourceVideo.pathname,inputPath);
+    if(job.sourceVideo?._localPath) await fs.copyFile(job.sourceVideo._localPath,inputPath); else await materializeBlob(job.sourceVideo.pathname,inputPath);
     await validateMedia(inputPath,"Video sumber");
     const sourceProbe=await probeMedia(inputPath);
     const requested=String(job.duration)==="auto" ? sourceProbe.duration : Number(job.duration)||sourceProbe.duration||15;
@@ -439,11 +439,13 @@ async function compose(job){
   try {
     const sceneFiles=[];
     for(let i=0;i<job.sceneCount;i++){
-      const url=job.scenes[i]?.outputUrl;
-      if(!url) throw new Error(`Output scene ${i+1} tidak ditemukan.`);
+      const scene=job.scenes[i]||{};
+      const url=scene.outputUrl;
       const target=path.join(dir,`scene-${i}.mp4`);
-      const pathname=job.scenes[i]?.outputPathname;
-      if(pathname) await materializeBlob(pathname,target); else await downloadFile(url,target);
+      if(scene._localPath) await fs.copyFile(scene._localPath,target);
+      else if(scene.outputPathname) await materializeBlob(scene.outputPathname,target);
+      else if(url) await downloadFile(url,target);
+      else throw new Error(`Output scene ${i+1} tidak ditemukan.`);
       await validateMedia(target,`Video scene ${i+1}`);
       sceneFiles.push(target);
     }
@@ -463,7 +465,7 @@ async function compose(job){
     let music=null;
     if(job.musicUrl || job.musicPathname){
       music=path.join(dir,"music"+path.extname(job.musicName||".mp3"));
-      if(job.musicPathname) await materializeBlob(job.musicPathname,music); else await downloadFile(job.musicUrl,music);
+      if(job.musicLocalPath) await fs.copyFile(job.musicLocalPath,music); else if(job.musicPathname) await materializeBlob(job.musicPathname,music); else await downloadFile(job.musicUrl,music);
       await validateMedia(music,"Musik");
     }
     const volume=Math.min(1,Math.max(0,Number(process.env.MUSIC_VOLUME||0.10)));
@@ -484,7 +486,7 @@ async function compose(job){
     }
     const blob=await putBlob(`outputs/${job.id}/final.mp4`,finalBuffer,"video/mp4",{cacheControlMaxAge:31536000});
     return blob.url;
-  } finally {await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
+  } finally {}
 }
 
 export async function createPipelineJob({photos=[],videoFile=null,musicFile,productName,style,duration,cta,customPrompt="",baseUrl,videoEngine="auto"}){
@@ -493,33 +495,41 @@ export async function createPipelineJob({photos=[],videoFile=null,musicFile,prod
   const sourceType=videoFile ? "video" : "photo";
   const storyboard=buildStoryboard({productName,style,duration:total});
   const prompt=buildCreativePrompt({productName,style,duration:total,cta,customPrompt,sourceType});
+  const selectedVideoEngine = videoEngine === "ai" ? "ai" : videoEngine === "local" ? "local" : (aiVideoEnabled() ? "ai" : "local");
   const photoRecords=[];
   let sourceVideo=null;
+  const sourceDir=await jobTmp(id);
   if(videoFile){
     const ext=path.extname(videoFile.originalname||"").toLowerCase()||".mp4";
-    const blob=await putBlob(`uploads/${id}/source-video${ext}`,videoFile.buffer,videoFile.mimetype||"video/mp4",{cacheControlMaxAge:86400});
-    sourceVideo={url:blob.url,pathname:blob.pathname,name:videoFile.originalname||"source-video"};
+    const localPath=path.join(sourceDir,`source-video${ext}`);
+    await fs.writeFile(localPath,videoFile.buffer);
+    sourceVideo={_localPath:localPath,name:videoFile.originalname||"source-video"};
   } else {
     for(const [i,photo] of photos.entries()){
       const ext=path.extname(photo.originalname||"").toLowerCase()||".jpg";
-      const blob=await putBlob(`uploads/${id}/product-${i}${ext}`,photo.buffer,photo.mimetype||"image/jpeg",{cacheControlMaxAge:86400});
-      photoRecords.push({imageUrl:blob.url,imagePath:blob.pathname,imageDataUri:null,name:photo.originalname||""});
+      if(selectedVideoEngine==="ai"){
+        const blob=await putBlob(`uploads/${id}/product-${i}${ext}`,photo.buffer,photo.mimetype||"image/jpeg",{cacheControlMaxAge:86400});
+        photoRecords.push({imageUrl:blob.url,imagePath:blob.pathname,imageDataUri:null,name:photo.originalname||""});
+      } else {
+        const localPath=path.join(sourceDir,`product-${i}${ext}`);
+        await fs.writeFile(localPath,photo.buffer);
+        photoRecords.push({_localPath:localPath,name:photo.originalname||""});
+      }
     }
   }
-  const scripts=sourceType==="video" ? [] : await generateCreativePlan({productName,style,cta,customPrompt,storyboard,imageDataUris:[],imageUrls:photoRecords.map(x=>x.imageUrl),sourcePhotoCount:photoRecords.length});
+  const scripts=sourceType==="video" ? [] : await generateCreativePlan({productName,style,cta,customPrompt,storyboard,imageDataUris:[],imageUrls:photoRecords.map(x=>x.imageUrl).filter(Boolean),sourcePhotoCount:photoRecords.length});
   let musicUrl=null;
   let musicPathname=null;
+  let musicLocalPath=null;
   if(musicFile?.buffer){
     const ext=path.extname(musicFile.originalname||".mp3")||".mp3";
-    const blob=await putBlob(`uploads/${id}/music${ext}`,musicFile.buffer,musicFile.mimetype||"audio/mpeg",{cacheControlMaxAge:86400});
-    musicUrl=blob.url;
-    musicPathname=blob.pathname;
+    musicLocalPath=path.join(sourceDir,`music${ext}`);
+    await fs.writeFile(musicLocalPath,musicFile.buffer);
   }
-  const selectedVideoEngine = videoEngine === "ai" ? "ai" : videoEngine === "local" ? "local" : (aiVideoEnabled() ? "ai" : "local");
   const job={
     id,status:"queued",progress:3,step:selectedVideoEngine === "ai" ? "Job dibuat · AI Video Generator siap merender" : "Job dibuat · Free Motion Engine siap merender",
     productName:productName||"",style:style||"ugc",duration:total,cta:cta||"",customPrompt:String(customPrompt||""),prompt,sourceType,videoEngine:selectedVideoEngine,
-    storyboard,sceneCount:sourceType==="video"?1:storyboard.length,musicUrl,musicPathname,musicName:musicFile?.originalname||"",
+    storyboard,sceneCount:sourceType==="video"?1:storyboard.length,musicUrl,musicPathname,musicLocalPath,musicName:musicFile?.originalname||"",
     imageUrl:photoRecords[0]?.imageUrl,imageDataUri:null,sourcePhotoCount:photos.length,photos:photoRecords,sourceVideo,
     scenes:sourceType==="video"
       ? [{scene:1,title:"Video Edit",duration:total,status:"queued",progress:0,script:"",imageIndex:0,shot:null,attempt:0,renderMode:"local-video-edit"}]
@@ -533,18 +543,20 @@ export async function processPipelineJob(jobId, initialJob=null){
   let job=initialJob || await getJob(jobId);
   if(!job) throw new Error("Job tidak ditemukan.");
   if(job.status==="completed") return job;
-  await updateJob(jobId,{status:"rendering",progress:5,step:`Free Motion Engine · ${job.sceneCount} scene`});
   try{
     if(job.sourceType==="video"){
-      await updateJob(jobId,{status:"rendering",progress:30,step:"Mengedit video sumber · menerapkan prompt dan format 9:16"});
+      job=await updateJob(jobId,{status:"rendering",progress:10,step:"Mengedit video sumber · menerapkan prompt dan format 9:16"});
       const edited=await renderVideoEdit(job);
-      return updateJob(jobId,{status:"completed",progress:100,step:"Video edit selesai · MP4 siap diputar",outputUrl:edited.outputUrl,completedAt:new Date().toISOString(),renderMode:"local-video-edit",engine:"local-video-edit",duration:edited.duration});
+      return await updateJob(jobId,{status:"completed",progress:100,step:"Video edit selesai · MP4 siap diputar",outputUrl:edited.outputUrl,completedAt:new Date().toISOString(),renderMode:"local-video-edit",engine:"local-video-edit",duration:edited.duration});
     }
+    // Persist only meaningful milestones. Progress/step chatter is kept in-memory
+    // so one job does not generate dozens of Blob writes.
+    job=await updateJob(jobId,{status:"rendering",progress:5,step:`Free Motion Engine · ${job.sceneCount} scene`});
     for(let i=0;i<job.sceneCount;i++){
       job=await getJob(jobId);
       if(job.status==="failed") throw new Error(job.step||"Job gagal.");
       const wantsAI = job.videoEngine === "ai" && aiVideoEnabled();
-      await updateJob(jobId,{status:"rendering",progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`AI Video scene ${i+1}/${job.sceneCount} · Wan 2.2`:`Render free motion scene ${i+1}/${job.sceneCount}`});
+      job=await updateJob(jobId,{progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`AI Video scene ${i+1}/${job.sceneCount} · Wan 2.2`:`Render free motion scene ${i+1}/${job.sceneCount}`});
       let result;
       let usedAI = false;
       if(wantsAI){
@@ -553,7 +565,7 @@ export async function processPipelineJob(jobId, initialJob=null){
           usedAI = true;
         } catch(aiError) {
           console.error(`AI video scene ${i+1} gagal, fallback Local Free:`, aiError?.stack||aiError);
-          await updateJob(jobId,{step:`AI scene ${i+1} gagal · otomatis pindah ke Local Free`});
+          job=await updateJob(jobId,{step:`AI scene ${i+1} gagal · otomatis pindah ke Local Free`});
           result = await renderLocalScene(job,i);
           result = {...result,aiFallback:true,aiFallbackReason:aiError?.message||"AI generation failed"};
         }
@@ -563,15 +575,16 @@ export async function processPipelineJob(jobId, initialJob=null){
       job=await getJob(jobId);
       const scenes=[...job.scenes];
       scenes[i]={...scenes[i],...result,status:"completed",progress:100,renderMode:usedAI?"ai-video":"local-free-motion"};
-      await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · ${usedAI?"AI Video":"Local Free"}`,status:i+1===job.sceneCount?"composing":"rendering"});
+      job=await updateJob(jobId,{scenes,progress:Math.min(88,Math.round(((i+1)/job.sceneCount)*85)),step:`Scene ${i+1}/${job.sceneCount} selesai · ${usedAI?"AI Video":"Local Free"}`,status:i+1===job.sceneCount?"composing":"rendering"});
     }
-    job=await getJob(jobId);
-    await updateJob(jobId,{status:"composing",progress:92,step:"Menyusun video final · audio + video"});
-    const finalUrl=await compose(await getJob(jobId));
-    return updateJob(jobId,{status:"completed",progress:100,step:`Video final selesai · ${job.videoEngine==="ai"?"AI Video + fallback Local Free":"100% free local motion"}`,outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:job.videoEngine==="ai"?"ai-video":"local-free-motion",engine:job.videoEngine==="ai"?"ai-video":"local-free-motion"});
+    job=await updateJob(jobId,{status:"composing",progress:92,step:"Menyusun video final · audio + video"});
+    const finalUrl=await compose(job);
+    return await updateJob(jobId,{status:"completed",progress:100,step:`Video final selesai · ${job.videoEngine==="ai"?"AI Video + fallback Local Free":"100% free local motion"}`,outputUrl:finalUrl,completedAt:new Date().toISOString(),renderMode:job.videoEngine==="ai"?"ai-video":"local-free-motion",engine:job.videoEngine==="ai"?"ai-video":"local-free-motion"});
   }catch(e){
-    await updateJob(jobId,{status:"failed",progress:0,step:`Video renderer gagal: ${e?.message||"Unknown error"}`});
+    try{ await updateJob(jobId,{status:"failed",progress:0,step:`Video renderer gagal: ${e?.message||"Unknown error"}`}); }catch(persistError){ console.error("Failed to persist job failure:",persistError); }
     throw e;
+  }finally{
+    await cleanupJobTmp(jobId);
   }
 }
 

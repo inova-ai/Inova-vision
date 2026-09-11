@@ -1,4 +1,4 @@
-import { put, get, list, del } from '@vercel/blob';
+import { put, get, del } from '@vercel/blob';
 
 // Vercel Blob adapter supporting both legacy static tokens and the 2026 OIDC flow.
 // New Vercel Blob stores normally use BLOB_STORE_ID + VERCEL_OIDC_TOKEN.
@@ -43,14 +43,11 @@ export function hasBlobCredentials() {
 }
 
 export async function checkBlobConnection() {
-  try {
-    await list({ prefix: '__health__', limit: 1, ...authOptions() });
-    return { ok: true, error: null };
-  } catch (error) {
-    const message = error?.message || String(error);
-    console.error('Vercel Blob connection check failed:', message);
-    return { ok: false, error: message };
-  }
+  // Do not call Blob list() from health checks: list is an advanced operation.
+  // Credential presence is enough for the health endpoint; real reads/writes
+  // still surface their own errors when an actual job uses Blob.
+  if (hasBlobCredentials()) return { ok: true, error: null };
+  return { ok: false, error: 'Vercel Blob credentials/OIDC belum terdeteksi.' };
 }
 
 export function blobPublicUrl(pathname) {
@@ -83,40 +80,6 @@ export async function getBlob(pathname, type = 'arrayBuffer') {
 export async function getBlobUrl(pathname) {
   const result = await get(pathname, { ...options('public'), useCache: false });
   return result?.blob?.url || null;
-}
-
-export async function putJobJson(prefix, value) {
-  try {
-    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    const pathname = `${prefix}${stamp}.json`;
-    const blob = await put(pathname, JSON.stringify(value, null, 2), {
-      ...options('public'),
-      contentType: 'application/json',
-      addRandomSuffix: false,
-      allowOverwrite: false,
-      // Job records are immutable, so CDN caching is safe.
-      cacheControlMaxAge: 60
-    });
-    return { url: blob.url, pathname: blob.pathname };
-  } catch (error) {
-    throw new Error(`Vercel Blob job gagal disimpan: ${error?.message || error}`);
-  }
-}
-
-export async function readJobJson(prefix) {
-  const result = await list({ prefix, limit: 1000, ...authOptions() });
-  const blobs = Array.isArray(result?.blobs) ? result.blobs : [];
-  if (!blobs.length) return null;
-
-  // Vercel Blob lists pathnames lexicographically. Our pathname starts with
-  // a millisecond timestamp, so the last entry is the newest job snapshot.
-  blobs.sort((a, b) => String(a.pathname).localeCompare(String(b.pathname)));
-  const latest = blobs[blobs.length - 1];
-  if (!latest?.pathname) return null;
-
-  const data = await get(latest.pathname, { ...options('public'), useCache: false });
-  if (!data || data.statusCode !== 200 || !data.stream) return null;
-  return JSON.parse(await new Response(data.stream).text());
 }
 
 export async function readBlobJson(pathname) {

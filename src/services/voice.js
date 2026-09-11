@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { putBlob } from "./blob-store.js";
 import ffmpegPath from "ffmpeg-static";
 import { spawn } from "node:child_process";
 
@@ -49,17 +48,12 @@ export async function createVoiceover({ text, jobId, sceneIndex, targetSeconds =
     if (!audio.length) throw new Error("TTS menghasilkan file audio kosong.");
     await validateAudio(output);
 
-    const blob = await putBlob(
-      `outputs/${jobId}/voice-${sceneIndex}.mp3`,
-      audio,
-      "audio/mpeg",
-      { cacheControlMaxAge: 86400 }
-    );
-    return { url: blob.url, pathname: blob.pathname, provider: "edge-tts", voice, targetSeconds };
+    return { _localPath: output, provider: "edge-tts", voice, targetSeconds };
   } catch (error) {
     console.warn("Free TTS unavailable; continuing without voice:", error?.message || error);
     return null;
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    // The pipeline owns cleanup after the whole job finishes. Keeping the local
+    // MP3 here avoids one Blob upload per scene.
   }
 }

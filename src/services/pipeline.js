@@ -6,7 +6,7 @@ import { saveJob, updateJob, getJob } from "./job-store.js";
 import { buildCreativePrompt, buildStoryboard, buildSceneScript } from "./creative-engine.js";
 import { generateCreativePlan } from "./ai-script.js";
 import { createVoiceover } from "./voice.js";
-import { putBlob, getBlob } from "./blob-store.js";
+import { uploadStorage, downloadStorage } from "./supabase-store.js";
 import ffmpegPath from "ffmpeg-static";
 
 // INOVA VISION FREE ENGINE
@@ -27,12 +27,12 @@ async function downloadFile(url,target){
   return data;
 }
 
-async function materializeBlob(pathname,target){
+async function materializeStorage(pathname,target){
   if(!pathname) return false;
-  const data=await getBlob(pathname,"arrayBuffer");
-  if(data==null) throw new Error(`Blob media tidak ditemukan: ${pathname}`);
+  const data=await downloadStorage(pathname);
+  if(data==null) throw new Error(`Media Supabase tidak ditemukan: ${pathname}`);
   const buffer=Buffer.from(data);
-  if(!buffer.length) throw new Error(`Blob media kosong: ${pathname}`);
+  if(!buffer.length) throw new Error(`Media Supabase kosong: ${pathname}`);
   await fs.writeFile(target,buffer);
   return true;
 }
@@ -294,7 +294,7 @@ async function renderAiScene(job, sceneIndex){
       voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
     }
     if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
-    else if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    else if(voice?.pathname) await materializeStorage(voice.pathname,voicePath);
     else if(voice?.url) await downloadFile(voice.url,voicePath);
     if(voice&&(voice._localPath||voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
     const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
@@ -330,7 +330,7 @@ async function renderMagicHourScene(job, sceneIndex){
       voice=await createVoiceover({text:scene.script||buildSceneScript({productName:job.productName,style:job.style,cta:job.cta,scene:job.storyboard[sceneIndex]}),jobId:job.id,sceneIndex,targetSeconds:duration});
     }
     if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
-    else if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    else if(voice?.pathname) await materializeStorage(voice.pathname,voicePath);
     else if(voice?.url) await downloadFile(voice.url,voicePath);
     if(voice&&(voice._localPath||voice.pathname||voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
     const vf="scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,format=yuv420p";
@@ -358,7 +358,7 @@ async function renderLocalScene(job, sceneIndex){
   const scenePath=path.join(dir,`scene-${sceneIndex}.mp4`);
   try {
     if(selected._localPath) await fs.copyFile(selected._localPath,imagePath);
-    else if(selected.imagePath) await materializeBlob(selected.imagePath,imagePath);
+    else if(selected.imagePath) await materializeStorage(selected.imagePath,imagePath);
     else await downloadFile(imageUrl,imagePath);
     await validateMedia(imagePath,`Foto scene ${sceneIndex+1}`);
     let voice=scene.voice||null;
@@ -369,7 +369,7 @@ async function renderLocalScene(job, sceneIndex){
       });
     }
     if(voice?._localPath) await fs.copyFile(voice._localPath,voicePath);
-    else if(voice?.pathname) await materializeBlob(voice.pathname,voicePath);
+    else if(voice?.pathname) await materializeStorage(voice.pathname,voicePath);
     else if(voice?.url) await downloadFile(voice.url,voicePath);
     if(voice && (voice._localPath || voice.pathname || voice.url)) await validateMedia(voicePath,`Voice scene ${sceneIndex+1}`);
 
@@ -401,7 +401,7 @@ async function renderVideoEdit(job){
   const inputPath=path.join(dir,"source-video");
   const outputPath=path.join(dir,"edited.mp4");
   try{
-    if(job.sourceVideo?._localPath) await fs.copyFile(job.sourceVideo._localPath,inputPath); else await materializeBlob(job.sourceVideo.pathname,inputPath);
+    if(job.sourceVideo?._localPath) await fs.copyFile(job.sourceVideo._localPath,inputPath); else await materializeStorage(job.sourceVideo.pathname,inputPath);
     await validateMedia(inputPath,"Video sumber");
     const sourceProbe=await probeMedia(inputPath);
     const requested=String(job.duration)==="auto" ? sourceProbe.duration : Number(job.duration)||sourceProbe.duration||15;
@@ -426,8 +426,8 @@ async function renderVideoEdit(job){
     if(probe.duration<Math.max(0.5,outDuration*0.8) || probe.videoFrames<2) throw new Error(`Video edit tidak lengkap: ${probe.duration.toFixed(2)}s, ${probe.videoFrames} frame.`);
     const buffer=await fs.readFile(outputPath);
     if(buffer.length<1024 || buffer.subarray(4,8).toString("ascii")!=="ftyp") throw new Error("Video edit bukan MP4 valid.");
-    const blob=await putBlob(`outputs/${job.id}/final.mp4`,buffer,"video/mp4",{cacheControlMaxAge:31536000});
-    return {outputUrl:blob.url,outputPathname:blob.pathname,duration:probe.duration,renderMode:"local-video-edit",promptApplied:job.customPrompt||""};
+    const stored=await uploadStorage(`outputs/${job.id}/final.mp4`,buffer,"video/mp4");
+    return {outputUrl:stored.url,outputPathname:stored.pathname,duration:probe.duration,renderMode:"local-video-edit",promptApplied:job.customPrompt||""};
   }finally{await fs.rm(dir,{recursive:true,force:true}).catch(()=>{});}
 }
 
@@ -443,7 +443,7 @@ async function compose(job){
       const url=scene.outputUrl;
       const target=path.join(dir,`scene-${i}.mp4`);
       if(scene._localPath) await fs.copyFile(scene._localPath,target);
-      else if(scene.outputPathname) await materializeBlob(scene.outputPathname,target);
+      else if(scene.outputPathname) await materializeStorage(scene.outputPathname,target);
       else if(url) await downloadFile(url,target);
       else throw new Error(`Output scene ${i+1} tidak ditemukan.`);
       await validateMedia(target,`Video scene ${i+1}`);
@@ -465,7 +465,7 @@ async function compose(job){
     let music=null;
     if(job.musicUrl || job.musicPathname){
       music=path.join(dir,"music"+path.extname(job.musicName||".mp3"));
-      if(job.musicLocalPath) await fs.copyFile(job.musicLocalPath,music); else if(job.musicPathname) await materializeBlob(job.musicPathname,music); else await downloadFile(job.musicUrl,music);
+      if(job.musicLocalPath) await fs.copyFile(job.musicLocalPath,music); else if(job.musicPathname) await materializeStorage(job.musicPathname,music); else await downloadFile(job.musicUrl,music);
       await validateMedia(music,"Musik");
     }
     const volume=Math.min(1,Math.max(0,Number(process.env.MUSIC_VOLUME||0.10)));
@@ -484,8 +484,8 @@ async function compose(job){
     if(finalBuffer.length < 1024 || finalBuffer.subarray(4,8).toString("ascii") !== "ftyp") {
       throw new Error("Video final bukan MP4 valid (header ftyp tidak ditemukan).");
     }
-    const blob=await putBlob(`outputs/${job.id}/final.mp4`,finalBuffer,"video/mp4",{cacheControlMaxAge:31536000});
-    return blob.url;
+    const stored=await uploadStorage(`outputs/${job.id}/final.mp4`,finalBuffer,"video/mp4");
+    return stored.url;
   } finally {}
 }
 
@@ -508,8 +508,8 @@ export async function createPipelineJob({photos=[],videoFile=null,musicFile,prod
     for(const [i,photo] of photos.entries()){
       const ext=path.extname(photo.originalname||"").toLowerCase()||".jpg";
       if(selectedVideoEngine==="ai"){
-        const blob=await putBlob(`uploads/${id}/product-${i}${ext}`,photo.buffer,photo.mimetype||"image/jpeg",{cacheControlMaxAge:86400});
-        photoRecords.push({imageUrl:blob.url,imagePath:blob.pathname,imageDataUri:null,name:photo.originalname||""});
+        const stored=await uploadStorage(`uploads/${id}/product-${i}${ext}`,photo.buffer,photo.mimetype||"image/jpeg");
+        photoRecords.push({imageUrl:stored.url,imagePath:stored.pathname,imageDataUri:null,name:photo.originalname||""});
       } else {
         const localPath=path.join(sourceDir,`product-${i}${ext}`);
         await fs.writeFile(localPath,photo.buffer);
@@ -550,7 +550,7 @@ export async function processPipelineJob(jobId, initialJob=null){
       return await updateJob(jobId,{status:"completed",progress:100,step:"Video edit selesai · MP4 siap diputar",outputUrl:edited.outputUrl,completedAt:new Date().toISOString(),renderMode:"local-video-edit",engine:"local-video-edit",duration:edited.duration});
     }
     // Persist only meaningful milestones. Progress/step chatter is kept in-memory
-    // so one job does not generate dozens of Blob writes.
+    // so one job does not generate dozens of storage writes.
     job=await updateJob(jobId,{status:"rendering",progress:5,step:`Free Motion Engine · ${job.sceneCount} scene`});
     for(let i=0;i<job.sceneCount;i++){
       job=await getJob(jobId);

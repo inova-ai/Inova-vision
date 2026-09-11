@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { putBlob } from "./blob-store.js";
+import { uploadStorage } from "./supabase-store.js";
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -30,10 +30,10 @@ async function createPhotoTriptych({ photo, mode = "fashion-triptych", customPro
   if (!token) throw new Error("MAGIC_HOUR_API_KEY belum dikonfigurasi.");
 
   const id = crypto.randomUUID();
-  const ext = (photo.originalname?.match(/\\.[a-z0-9]+$/i)?.[0] || ".jpg").toLowerCase();
+  const ext = (photo.originalname?.match(/\.[a-z0-9]+$/i)?.[0] || ".jpg").toLowerCase();
 
-  // One Blob write: make the source image publicly fetchable by Magic Hour.
-  const source = await putBlob(`photo-ai/${id}/source${ext}`, photo.buffer, photo.mimetype || "image/jpeg", { cacheControlMaxAge: 3600 });
+  // One Supabase Storage write: make the source image publicly fetchable by Magic Hour.
+  const source = await uploadStorage(`photo-ai/${id}/source${ext}`, photo.buffer, photo.mimetype || "image/jpeg");
 
   const model = process.env.MAGIC_HOUR_IMAGE_MODEL || "qwen-edit";
   const resolution = process.env.MAGIC_HOUR_IMAGE_RESOLUTION || "640px";
@@ -92,8 +92,8 @@ async function createPhotoTriptych({ photo, mode = "fashion-triptych", customPro
   const outputContentType = String(imageRes.headers.get("content-type") || "image/jpeg").split(";")[0].toLowerCase();
   const outputExt = outputContentType.includes("png") ? ".png" : outputContentType.includes("webp") ? ".webp" : ".jpg";
 
-  // One Blob write: only the final result is kept permanently.
-  const final = await putBlob(`photo-ai/${id}/triptych${outputExt}`, outputBuffer, outputContentType, { cacheControlMaxAge: 31536000 });
+  // Only the final result is kept permanently in Supabase Storage.
+  const final = await uploadStorage(`photo-ai/${id}/triptych${outputExt}`, outputBuffer, outputContentType);
 
   return {
     ok: true,
@@ -105,7 +105,7 @@ async function createPhotoTriptych({ photo, mode = "fashion-triptych", customPro
     resolution,
     outputContentType,
     creditsCharged: created.credits_charged ?? project.credits_charged ?? null,
-    blobAdvancedOperations: 2
+    storageProvider: "supabase", storageWrites: 2
   };
 }
 

@@ -54,6 +54,6 @@ export async function createVoiceover({ text, jobId, sceneIndex, targetSeconds =
     return null;
   } finally {
     // The pipeline owns cleanup after the whole job finishes. Keeping the local
-    // MP3 here avoids one Blob upload per scene.
+    // MP3 stays in /tmp and is removed after the job; no remote upload per scene.
   }
 }

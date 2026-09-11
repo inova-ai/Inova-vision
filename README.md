@@ -54,3 +54,7 @@ Jika `supabaseStorage` masih `false`, periksa `SUPABASE_URL` dan `SUPABASE_SERVI
 ## Batas upload
 
 Jalur upload server masih memakai batas konservatif 3 MB per file dan total sekitar 4 MB agar aman terhadap batas request serverless. Penyimpanan permanen tidak lagi menggunakan Vercel Blob.
+
+
+## Voice-over ON/OFF
+The video generator now has a `Suara terjemahan / Voice-over` control. ON generates Indonesian narration from the creative script and muxes it into the final MP4. OFF skips TTS generation; music, if uploaded, can still be used.

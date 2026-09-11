@@ -114,6 +114,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
       duration: req.body.duration,
       cta: req.body.cta,
       videoEngine: req.body.videoEngine,
+      voiceEnabled: String(req.body.voiceEnabled || "on") !== "off",
       musicFile: req.files.music?.[0] || null,
       baseUrl
     });

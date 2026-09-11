@@ -158,14 +158,17 @@ function videoEngineConfigured(engine) {
 async function createMagicHourImageToVideo({imageUrl, prompt, duration, job}) {
   const token = process.env.MAGIC_HOUR_API_KEY;
   if (!token) throw new Error("MAGIC_HOUR_API_KEY belum dikonfigurasi.");
-  const allowed = [3,4,5,6,7,8,9,10,15];
-  const requested = Math.max(3, Math.min(15, Number(duration)||5));
+  // Kling 2.5 is intentionally used for motion-heavy I2V. Magic Hour documents
+  // it as strong for motion/action and reliable image-to-video control.
+  const model = "kling-2.5";
+  const allowed = [5,10];
+  const requested = Math.max(5, Math.min(10, Number(duration)||5));
   const endSeconds = allowed.reduce((best, n) => Math.abs(n-requested) < Math.abs(best-requested) ? n : best, allowed[0]);
   const body = {
     name: `INOVA VISION ${job.id} scene`,
     end_seconds: endSeconds,
-    model: process.env.MAGIC_HOUR_VIDEO_MODEL || "wan-2.2",
-    resolution: process.env.MAGIC_HOUR_VIDEO_RESOLUTION || "480p",
+    model,
+    resolution: process.env.MAGIC_HOUR_VIDEO_RESOLUTION || "720p",
     audio: false,
     style: { prompt },
     assets: { image_file_path: imageUrl }
@@ -212,18 +215,16 @@ function absolutePublicUrl(job, url){
 function buildI2VPrompt(job, scene){
   const shot=scene.shot||{};
   return [
-    "Create a photorealistic vertical product advertisement from the provided reference image.",
-    `Product: ${job.productName||"the product shown in the reference image"}.`,
-    `Camera: ${shot.cameraMovement||"slow push-in"}.`,
-    `Composition: ${shot.composition||"keep the entire product clearly visible"}.`,
-    `Lighting: ${shot.lighting||"natural realistic commercial lighting"}.`,
-    `Style: ${job.style||"ugc"}.`,
-    "Preserve the exact product identity, geometry, proportions, colors, materials, packaging, logo placement and all visible text from the source image.",
-    "The product must remain the same physical object throughout the clip. Do not redesign, replace, morph, duplicate or invent product details.",
-    "Animate the main subject as a living person, not as a still image: natural body movement, subtle weight shift, head and eye movement, realistic arm and hand movement, natural posture changes, and when the subject is a person wearing the product, allow a small natural step or turn so the clothing moves with the body.",
-    "Prioritize subject motion over camera shake or zoom. The camera should stay smooth and stable with only gentle cinematic movement; do not create artificial vibration, jitter, or repeated shaking.",
-    "Keep branding and labels stable and readable. No warped text, no extra fingers, no extra products, no floating objects, no surreal motion, no frozen mannequin-like subject.",
-    "Photorealistic commercial video, physically plausible motion, stable exposure, natural shadows, clean social-commerce look."
+    "Animate the person in the reference image with clear, continuous physical movement.",
+    `Product: ${job.productName||"the clothing/product shown in the image"}.`,
+    "The subject slowly shifts weight, moves one arm naturally, turns the head slightly, and takes one small natural step forward during the clip.",
+    "The clothing and body move together naturally with realistic fabric motion and body mechanics.",
+    "Keep the face, body, clothing, colors, proportions, logo and all visible details consistent with the reference.",
+    "The subject must not remain frozen or mannequin-like.",
+    "LOCK THE CAMERA: no shake, no jitter, no handheld vibration, no artificial camera wobble, no rapid zoom.",
+    `Composition: ${shot.composition||"full-body vertical framing, subject clearly visible"}.`,
+    `Lighting: ${shot.lighting||"stable realistic commercial lighting"}.`,
+    "Photorealistic commercial video, smooth natural motion, stable background, physically plausible movement."
   ].join(" ");
 }
 
@@ -345,7 +346,7 @@ async function renderMagicHourScene(job, sceneIndex){
     await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
     const probe=await probeMedia(scenePath);
     if(probe.duration<Math.max(0.5,duration*0.65)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
-    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:process.env.MAGIC_HOUR_VIDEO_MODEL||"wan-2.2",aiCredits:ai.credits,aiProjectId:ai.projectId};
+    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:"kling-2.5",aiCredits:ai.credits,aiProjectId:ai.projectId};
   } finally {}
 }
 

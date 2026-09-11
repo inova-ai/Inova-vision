@@ -31,7 +31,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.7.1-supabase-storage",
+    version: "6.7.1-supabase-storage-motion-fix",
     engine: "local-free-motion",
     configured: supabase.configured,
     storageProvider: "supabase",

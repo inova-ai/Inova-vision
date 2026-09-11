@@ -28,7 +28,6 @@ function headers(extra={}){
   return { Authorization:`Bearer ${key}`, apikey:key, ...extra };
 }
 
-let bucketReady = null;
 
 async function ensureResponseOk(res, label){
   if(res.ok) return;
@@ -42,21 +41,11 @@ export function supabasePublicUrl(pathname){
   return `${url}/storage/v1/object/public/${encodeURIComponent(bucket)}/${String(pathname).split('/').map(encodeURIComponent).join('/')}`;
 }
 
-export async function ensureStorageBucket(){
-  // The bucket is created once from Supabase Dashboard.
-  // Do not call the bucket-create endpoint on every job: some Supabase
-  // project API configurations route that path through PostgREST and return
-  // PGRST125 even though the existing Storage bucket is valid.
-  const {url,key,bucket} = config();
-  if(!url || !key) throw new Error('Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di Vercel.');
-  if(!bucket) throw new Error('SUPABASE_STORAGE_BUCKET belum diisi.');
-  return true;
-}
+
 
 export async function uploadStorage(pathname, data, contentType){
   const {url,bucket} = config();
   if(!hasSupabaseCredentials()) throw new Error('Supabase belum dikonfigurasi. Tambahkan SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY di Vercel.');
-  await ensureStorageBucket();
   const cleanPath = String(pathname).replace(/^\/+/, '');
   const res = await fetch(`${url}/storage/v1/object/${encodeURIComponent(bucket)}/${cleanPath.split('/').map(encodeURIComponent).join('/')}`, {
     method:'POST',

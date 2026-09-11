@@ -54,3 +54,7 @@ Jika `supabaseStorage` masih `false`, periksa `SUPABASE_URL` dan `SUPABASE_SERVI
 ## Batas upload
 
 Jalur upload server masih memakai batas konservatif 3 MB per file dan total sekitar 4 MB agar aman terhadap batas request serverless. Penyimpanan permanen tidak lagi menggunakan Vercel Blob.
+
+
+### V14.1 fix
+The server normalizes SUPABASE_URL if `/rest/v1`, `/storage/v1`, or `/auth/v1` was accidentally copied into the value. It also checks the existing `inova-vision` bucket before attempting creation.

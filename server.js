@@ -32,7 +32,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.3.3-vercel-blob-job-fix",
+    version: "6.3.4-vercel-job-consistency-fix",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,
@@ -125,6 +125,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
 });
 
 app.get("/api/jobs/:id", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
   const job = await getJob(req.params.id);
   if (!job) return res.status(404).json({ error: "Job tidak ditemukan." });
   res.json({ job });

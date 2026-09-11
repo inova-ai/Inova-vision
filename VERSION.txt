@@ -1,1 +1,1 @@
-INOVA VISION AI v6.3.2 - Vercel Blob OIDC FIX
+6.3.4-vercel-job-consistency-fix

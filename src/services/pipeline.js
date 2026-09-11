@@ -214,17 +214,16 @@ function absolutePublicUrl(job, url){
 
 function buildI2VPrompt(job, scene){
   const shot=scene.shot||{};
+  const product=job.productName||"the clothing shown in the reference image";
   return [
-    "Animate the person in the reference image with clear, continuous physical movement.",
-    `Product: ${job.productName||"the clothing/product shown in the image"}.`,
-    "The subject slowly shifts weight, moves one arm naturally, turns the head slightly, and takes one small natural step forward during the clip.",
-    "The clothing and body move together naturally with realistic fabric motion and body mechanics.",
-    "Keep the face, body, clothing, colors, proportions, logo and all visible details consistent with the reference.",
-    "The subject must not remain frozen or mannequin-like.",
-    "LOCK THE CAMERA: no shake, no jitter, no handheld vibration, no artificial camera wobble, no rapid zoom.",
-    `Composition: ${shot.composition||"full-body vertical framing, subject clearly visible"}.`,
-    `Lighting: ${shot.lighting||"stable realistic commercial lighting"}.`,
-    "Photorealistic commercial video, smooth natural motion, stable background, physically plausible movement."
+    "Animate the person clearly; this must be real body motion, not camera shake.",
+    `Product: ${product}.`,
+    "During the clip the person shifts weight, takes one small step forward, naturally swings one arm, briefly adjusts the jacket with the hand, then turns the head slightly.",
+    "The whole body and clothing move together with natural human biomechanics and realistic fabric movement.",
+    "Keep the same person, face, hairstyle, suit, colors, proportions and background throughout.",
+    "Camera is completely locked and stable: no handheld shake, no jitter, no vibration, no zoom, no pan, no orbit.",
+    `Framing: ${shot.composition||"full-body vertical fashion shot, person fully visible"}.`,
+    "Photorealistic fashion advertisement, smooth continuous motion, no frozen mannequin pose, no morphing, no flicker."
   ].join(" ");
 }
 
@@ -561,19 +560,17 @@ export async function processPipelineJob(jobId, initialJob=null){
       job=await getJob(jobId);
       if(job.status==="failed") throw new Error(job.step||"Job gagal.");
       const wantsAI = job.videoEngine === "ai" && aiVideoEnabled();
-      job=await updateJob(jobId,{progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`AI Video scene ${i+1}/${job.sceneCount} · Wan 2.2`:`Render free motion scene ${i+1}/${job.sceneCount}`});
+      job=await updateJob(jobId,{progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`Kling 2.5 · AI motion scene ${i+1}/${job.sceneCount}`:`Render free motion scene ${i+1}/${job.sceneCount}`});
       let result;
       let usedAI = false;
       if(wantsAI){
-        try {
-          result = await renderMagicHourScene(job,i);
-          usedAI = true;
-        } catch(aiError) {
-          console.error(`AI video scene ${i+1} gagal, fallback Local Free:`, aiError?.stack||aiError);
-          job=await updateJob(jobId,{step:`AI scene ${i+1} gagal · otomatis pindah ke Local Free`});
-          result = await renderLocalScene(job,i);
-          result = {...result,aiFallback:true,aiFallbackReason:aiError?.message||"AI generation failed"};
-        }
+        // Never silently replace AI motion with the local Ken-Burns renderer.
+        // The local renderer only moves/crops pixels and can look like camera shake;
+        // if Kling fails, expose the real error so the user does not receive a
+        // misleading "AI" result.
+        job=await updateJob(jobId,{step:`Kling 2.5 · AI motion scene ${i+1}/${job.sceneCount}`});
+        result = await renderMagicHourScene(job,i);
+        usedAI = true;
       } else {
         result = await renderLocalScene(job,i);
       }

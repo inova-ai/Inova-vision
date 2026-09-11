@@ -1,6 +1,6 @@
 {
-  "name": "inova-vision-vercel-v12-ai-video",
-  "version": "6.4.0",
+  "name": "inova-vision-vercel-v13-ai-photo",
+  "version": "6.6.0",
   "private": true,
   "type": "module",
   "scripts": {

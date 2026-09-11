@@ -1,1 +1,1 @@
-6.4.1-ai-video-job-stable
+6.6.0-blob-ops-optimized-ai-photo-triptych

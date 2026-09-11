@@ -33,7 +33,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.4.1-ai-video-job-stable",
+    version: "6.5.0-blob-ops-optimized",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,
@@ -54,6 +54,12 @@ app.get("/api/health", async (_req, res) => {
     videoAIConfigured: videoAI,
     videoAIProvider: videoAI ? "magic-hour" : null,
     videoAIModel: videoAI ? (process.env.MAGIC_HOUR_VIDEO_MODEL || "wan-2.2") : null,
+    photoAI: videoAI,
+    photoAIConfigured: videoAI,
+    photoAIProvider: videoAI ? "magic-hour" : null,
+    photoAIModel: videoAI ? (process.env.MAGIC_HOUR_IMAGE_MODEL || "qwen-edit") : null,
+    photoAIOutput: videoAI ? (process.env.MAGIC_HOUR_IMAGE_RESOLUTION || "640px") : null,
+    photoAIAdvancedBlobOpsPerImage: 2,
     videoFallback: true,
     videoFallbackMode: "local-free-motion-9x16",
     videoEngineModes: ["auto","ai","local"],
@@ -64,6 +70,33 @@ app.get("/api/health", async (_req, res) => {
   });
 });
 app.get("/api/styles", (_req, res) => res.json(getStyleList()));
+
+// AI Photo 3-View / Triptych editor. This intentionally uses only two Blob
+// advanced operations per request: one source upload and one final output
+// upload. The AI work itself is performed by Magic Hour.
+app.post("/api/photo-triptych", upload.single("photo"), async (req, res) => {
+  try {
+    const photo = req.file;
+    if (!photo?.buffer?.length) return res.status(400).json({ error: "Upload 1 foto terlebih dahulu." });
+    if (!photo.mimetype?.startsWith("image/")) return res.status(400).json({ error: "File harus berupa foto JPG, PNG, atau WEBP." });
+    if (!process.env.MAGIC_HOUR_API_KEY) return res.status(503).json({ error: "AI Photo belum aktif. Tambahkan MAGIC_HOUR_API_KEY di Vercel Environment Variables." });
+    if (photo.size > 3 * 1024 * 1024) return res.status(413).json({ error: "Foto maksimal 3 MB." });
+
+    const { createPhotoTriptych } = await import("./src/services/photo-triptych.js");
+    const baseUrl = String(process.env.PUBLIC_BASE_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+    const result = await createPhotoTriptych({
+      photo,
+      baseUrl,
+      mode: String(req.body?.mode || "fashion-triptych"),
+      customPrompt: String(req.body?.prompt || "")
+    });
+    return res.json(result);
+  } catch (e) {
+    console.error("Photo triptych error", e?.stack || e);
+    const status = /credits|402|quota|insufficient/i.test(String(e?.message || "")) ? 402 : 500;
+    return res.status(status).json({ error: e?.message || "AI Photo gagal diproses." });
+  }
+});
 
 app.get("/api/blob", async (req, res) => {
   try {
@@ -120,7 +153,11 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
         }
       })
     );
-    res.status(202).json({ job });
+    const publicJob = JSON.parse(JSON.stringify(job, (key, value) => {
+      if (key === "_localPath" || key === "musicLocalPath") return undefined;
+      return value;
+    }));
+    res.status(202).json({ job: publicJob });
   } catch (e) {
     console.error("Create job error", e);
     res.status(500).json({ error: e.message || "Gagal membuat job." });

@@ -232,7 +232,7 @@ generate.onclick = async () => {
     }
     if (!r.ok) throw new Error(data.error || "Gagal membuat job");
     activeJob = data.job.id;
-    timer = setInterval(poll, 1000);
+    timer = setInterval(poll, 2500);
     poll();
   } catch(e) {
     generate.disabled = false;
@@ -272,3 +272,73 @@ async function refreshHealth() {
   }
 }
 refreshHealth();
+
+// AI Photo 3-View / Triptych -------------------------------------------------
+const photoAiGenerate = document.querySelector("#photoAiGenerate");
+const photoAiMode = document.querySelector("#photoAiMode");
+const photoAiPrompt = document.querySelector("#photoAiPrompt");
+const photoAiPreview = document.querySelector("#photoAiPreview");
+const photoAiResult = document.querySelector("#photoAiResult");
+const photoAiStatus = document.querySelector("#photoAiStatus");
+
+function refreshPhotoAiPreview(){
+  const file = photos?.files?.[0];
+  if(!file){
+    photoAiPreview.innerHTML = "<span>Upload minimal 1 foto di bagian Product Photos di atas.</span>";
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  photoAiPreview.innerHTML = "";
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "Foto sumber AI 3 View";
+  photoAiPreview.appendChild(img);
+}
+photos?.addEventListener("change", refreshPhotoAiPreview);
+refreshPhotoAiPreview();
+
+photoAiGenerate?.addEventListener("click", async () => {
+  const file = photos?.files?.[0];
+  if(!file){
+    photoAiStatus.textContent = "Upload minimal 1 foto produk terlebih dahulu.";
+    return;
+  }
+  photoAiGenerate.disabled = true;
+  photoAiStatus.textContent = "AI sedang membuat tiga tampilan yang tetap konsisten. Jangan tutup halaman.";
+  photoAiResult.innerHTML = '<div class="photo-ai-empty">AI PROCESSING…<br><small>Menyiapkan 3 view katalog.</small></div>';
+  try{
+    const fd = new FormData();
+    fd.append("photo", file);
+    fd.append("mode", photoAiMode?.value || "fashion-triptych");
+    fd.append("prompt", photoAiPrompt?.value || "");
+    const r = await fetch("/api/photo-triptych", {method:"POST", body:fd});
+    const raw = await r.text();
+    let data;
+    try{ data = JSON.parse(raw); }catch{ throw new Error(`Backend mengembalikan respons bukan JSON (HTTP ${r.status}).`); }
+    if(!r.ok) throw new Error(data.error || "AI Photo gagal.");
+    if(!data.outputUrl) throw new Error("Hasil AI Photo tidak memiliki URL.");
+
+    const wrap = document.createElement("div");
+    wrap.className = "photo-ai-result-wrap";
+    const img = document.createElement("img");
+    img.src = `${data.outputUrl}${data.outputUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
+    img.alt = "Hasil AI Foto 3 View";
+    const dl = document.createElement("a");
+    dl.className = "generate photo-ai-download";
+    dl.href = img.src;
+    dl.target = "_blank";
+    dl.rel = "noopener";
+    const dlExt = (data.outputContentType || "image/jpeg").includes("png") ? "png" : (data.outputContentType || "").includes("webp") ? "webp" : "jpg";
+    dl.download = `inova-3-view-${data.id || Date.now()}.${dlExt}`;
+    dl.textContent = "⬇ Buka / Simpan Foto 3 View";
+    wrap.append(img, dl);
+    photoAiResult.replaceChildren(wrap);
+    photoAiStatus.textContent = `Selesai · ${data.model || "AI Image Editor"} · Blob hanya ${data.blobAdvancedOperations || 2} operasi advanced.`;
+  }catch(e){
+    photoAiResult.innerHTML = '<div class="photo-ai-empty">GAGAL<br><small></small></div>';
+    photoAiResult.querySelector("small").textContent = e.message;
+    photoAiStatus.textContent = e.message;
+  }finally{
+    photoAiGenerate.disabled = false;
+  }
+});

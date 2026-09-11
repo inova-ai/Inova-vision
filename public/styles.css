@@ -8,3 +8,14 @@
 .install-help button { justify-self: end; border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
 
 .field textarea{resize:vertical;min-height:110px;font:inherit;line-height:1.45}.video-drop[hidden],#photoDrop[hidden]{display:none}.video-thumb{border:1px solid #39363a;border-radius:9px;padding:10px;color:#bbb;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+/* AI Photo 3-View / Triptych */
+.photo-ai-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.8fr);gap:18px;align-items:stretch}
+.photo-ai-preview,.photo-ai-result{min-height:300px;border:1px dashed rgba(255,255,255,.14);border-radius:16px;background:rgba(0,0,0,.22);overflow:hidden;display:flex;align-items:center;justify-content:center;color:#8d9aaa;text-align:center}
+.photo-ai-preview img,.photo-ai-result img{width:100%;height:100%;min-height:300px;object-fit:contain;background:#080808}
+.photo-ai-actions{display:grid;gap:10px;margin-top:12px}
+.photo-ai-empty{padding:28px;line-height:1.7;color:#6f7b8b}
+.photo-ai-result .photo-ai-result-wrap{width:100%;height:100%;display:flex;flex-direction:column;gap:10px;padding:10px}
+.photo-ai-result .photo-ai-result-wrap img{min-height:0;height:auto;max-height:520px;border-radius:12px}
+.photo-ai-result .photo-ai-download{display:inline-flex;justify-content:center;text-decoration:none}
+@media(max-width:900px){.photo-ai-grid{grid-template-columns:1fr}.photo-ai-preview,.photo-ai-result{min-height:260px}}

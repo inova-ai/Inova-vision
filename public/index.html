@@ -88,6 +88,24 @@
       </div>
     </section>
 
+    <section class="photo-ai panel" id="photoAiPanel">
+      <div class="panel-head"><div><small>AI PHOTO</small><h2>Ubah 1 Foto Jadi 3 View</h2></div><span>TRIPTYCH</span></div>
+      <div class="photo-ai-grid">
+        <div>
+          <div class="photo-ai-preview" id="photoAiPreview"><span>Foto produk pertama yang kamu upload akan dipakai di sini.</span></div>
+          <div class="photo-ai-actions">
+            <label class="field"><span>Model layout</span><select id="photoAiMode"><option value="fashion-triptych" selected>👗 Fashion / Outfit · Front + Back + 3/4</option><option value="product-angles">📦 Produk · Front + Back + Side</option></select></label>
+            <label class="field"><span>Instruksi tambahan <small>opsional</small></span><input id="photoAiPrompt" placeholder="Contoh: pose natural, studio putih, katalog marketplace"></label>
+            <button id="photoAiGenerate" class="generate" type="button">✨ Buat Foto 3 View AI</button>
+            <div id="photoAiStatus" class="small-note">Menggunakan Magic Hour AI Image Editor. V13 membatasi penyimpanan Blob menjadi 2 operasi lanjutan per hasil: sumber + hasil final.</div>
+          </div>
+        </div>
+        <div class="photo-ai-result" id="photoAiResult">
+          <div class="photo-ai-empty">HASIL 3 VIEW<br><small>Belum ada hasil.</small></div>
+        </div>
+      </div>
+    </section>
+
     <section class="result panel" id="result">
       <div class="panel-head"><div><small>OUTPUT</small><h2>Your AI Video</h2></div><span id="resultBadge">WAITING</span></div>
       <div class="result-body">

@@ -54,6 +54,7 @@ const productName = document.querySelector("#productName");
 const cta = document.querySelector("#cta");
 const music = document.querySelector("#music");
 const duration = document.querySelector("#duration");
+const videoEngine = document.querySelector("#videoEngine");
 const generate = document.querySelector("#generate");
 const cancel = document.querySelector("#cancel");
 const bar = document.querySelector("#bar");
@@ -126,7 +127,7 @@ async function poll() {
       resultBadge.textContent = "COMPLETED";
       blueprint.textContent = j.sourceType === "video"
         ? `Edit video · ${j.duration || duration.value}s · prompt diterapkan: ${j.customPrompt || "auto"} · format 9:16 · MP4 kompatibel Android/Chrome.`
-        : `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · prompt + AI shot planning aktif · ${j.productName || "Product"}.`;
+        : `Style ${j.style || selectedStyle} · ${j.duration || duration.value}s · ${j.sceneCount || "multi"} scene · ${j.sourcePhotoCount||1} foto · engine ${j.engine || "auto"} · prompt + AI shot planning aktif · ${j.productName || "Product"}.`;
       const videoBox = document.querySelector(".video-box");
       if (j.outputUrl) {
         // Use a real <source> element and force the browser to reload the URL.
@@ -213,6 +214,7 @@ generate.onclick = async () => {
   fd.append("productName", productName.value);
   fd.append("style", selectedStyle);
   fd.append("duration", duration.value);
+    fd.append("videoEngine", videoEngine?.value || "auto");
   fd.append("cta", cta.value);
   fd.append("customPrompt", promptInput?.value || "");
   if (music.files[0]) fd.append("music", music.files[0]);
@@ -262,7 +264,7 @@ async function refreshHealth() {
       renderStep.textContent = "Vercel Blob belum terhubung. Pastikan BLOB_READ_WRITE_TOKEN sudah tersedia di Vercel.";
     } else {
       engine.textContent = "FREE EDITOR READY";
-      renderStep.textContent = "100% gratis · prompt mengontrol editing lokal: warna, crop 9:16, speed, audio, trim, mirror, sharpen, cinematic.";
+      renderStep.textContent = x.videoAIConfigured ? "AI Video Wan 2.2 tersedia · Auto akan fallback ke Local Free jika gagal/kuota habis." : "AI Video belum dikonfigurasi · Auto akan memakai Local Free. Tambahkan MAGIC_HOUR_API_KEY di Vercel jika ingin AI Video.";
     }
   } catch (e) {
     engine.textContent = "HEALTH ERROR";

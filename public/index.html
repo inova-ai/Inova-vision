@@ -67,13 +67,14 @@
           <button data-style="selling"><b>Hard Selling</b><small>Conversion focus</small></button>
         </div>
         <div class="row">
+          <label class="field"><span>Video Engine</span><select id="videoEngine"><option value="auto" selected>⚡ Auto · AI lalu Local Free</option><option value="ai">🤖 AI Video · Wan 2.2</option><option value="local">🆓 Local Free · tanpa API</option></select></label>
           <label class="field"><span>Durasi</span><select id="duration"><option value="auto">Otomatis / durasi sumber</option><option value="5">5 detik</option><option value="10">10 detik</option><option value="15" selected>15 detik</option><option value="30">30 detik</option><option value="60">60 detik</option><option value="90">90 detik</option><option value="120">2 menit</option></select></label>
           <label class="field"><span>Format</span><select id="format"><option value="9:16" selected>9:16 · Reels / TikTok</option></select></label>
         </div>
         <label class="field"><span>Prompt / instruksi edit <small>opsional</small></span><textarea id="prompt" rows="5" placeholder="Contoh: lebih terang, cinematic, tajam, mirror, percepat 1.5x, tanpa suara, potong 2 detik awal, pertahankan logo dan teks."></textarea></label>
         <label class="field"><span>CTA affiliate <small>opsional</small></span><input id="cta" placeholder="Cek produknya sekarang"></label>
         <label class="field"><span>Musik background <small>opsional · MP3/WAV</small></span><input id="music" type="file" accept="audio/mpeg,audio/wav,audio/*"></label>
-        <div class="tag-row" style="margin-top:12px"><span>🇮🇩 AI SCRIPT + VOICE READY</span><span>AUTO SUBTITLE</span><span>CTA</span></div>
+        <div class="tag-row" style="margin-top:12px"><span>🇮🇩 AI SCRIPT + VOICE READY</span><span>🤖 WAN 2.2 OPTIONAL</span><span>AUTO SUBTITLE</span><span>CTA</span></div>
       </div>
 
       <div class="panel render-panel">
@@ -82,7 +83,7 @@
         <div class="render-copy"><b id="renderTitle">Siap membuat video</b><span id="renderStep">Upload foto produk untuk memulai.</span></div>
         <div class="progress"><i id="bar"></i></div>
         <button id="generate" class="generate">✦ Generate AI Affiliate Video</button>
-        <div class="small-note">Untuk foto: AI membuat storyboard + motion lokal yang menjaga produk tetap stabil. Untuk video: INOVA mengedit video sumber dengan prompt, format 9:16, warna, ketajaman, mirror, speed, dan audio. Hasil selalu melewati compatibility check MP4 agar tidak tampil 0:00.</div>
+        <div class="small-note">Untuk foto: pilih Auto untuk mencoba AI Video (Wan 2.2) jika API tersedia, lalu otomatis kembali ke Local Free jika kuota/API gagal. Local Free tetap menjaga produk stabil. Untuk video: INOVA mengedit video sumber dengan prompt, format 9:16, warna, ketajaman, mirror, speed, dan audio. Hasil selalu melewati compatibility check MP4 agar tidak tampil 0:00.</div>
         <button id="cancel" class="cancel" hidden>Batalkan Render</button>
       </div>
     </section>

@@ -1,6 +1,6 @@
 {
-  "name": "inova-vision-vercel-v13-ai-photo",
-  "version": "6.6.0",
+  "name": "inova-vision-vercel-v14-supabase",
+  "version": "6.7.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,6 @@
     "ffmpeg-static": "^5.2.0",
     "multer": "^2.0.2",
     "node-edge-tts": "^1.2.10",
-    "@vercel/blob": "^2.8.0",
     "@vercel/functions": "^3.9.7"
   },
   "engines": {

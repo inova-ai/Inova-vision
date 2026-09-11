@@ -6,7 +6,7 @@ import { waitUntil } from "@vercel/functions";
 import multer from "multer";
 import { createPipelineJob, processPipelineJob, cancelPipelineJob } from "./src/services/pipeline.js";
 import { getJob, updateJob } from "./src/services/job-store.js";
-import { hasBlobCredentials, checkBlobConnection, getBlob, getBlobAuthInfo } from "./src/services/blob-store.js";
+import { hasSupabaseCredentials, getSupabaseInfo } from "./src/services/supabase-store.js";
 import { getStyleList } from "./src/services/creative-engine.js";
 
 const app = express();
@@ -25,31 +25,26 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/api/health", async (_req, res) => {
   res.type("application/json");
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-  const blobCheck = await checkBlobConnection();
-  const blobStorage = blobCheck.ok;
-  const blobAuth = getBlobAuthInfo();
+  const supabase = getSupabaseInfo();
   const scriptAI = Boolean(process.env.OPENAI_API_KEY);
   const videoAI = Boolean(process.env.MAGIC_HOUR_API_KEY);
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.5.0-blob-ops-optimized",
+    version: "6.7.0-supabase-storage",
     engine: "local-free-motion",
-    configured: blobStorage,
-    replicateRemoved: true,
-    blobStorage,
-    blobConfigured: blobStorage,
-    blobAuthMode: blobStorage ? blobAuth.mode : blobAuth.mode,
-    blobEnvironment: {
-      vercelRuntime: Boolean(process.env.VERCEL),
-      blobReadWriteToken: blobAuth.blobReadWriteToken,
-      blobStoreId: blobAuth.blobStoreId,
-      vercelOidcToken: blobAuth.vercelOidcToken
-    },
-    blobError: blobCheck.error,
+    configured: supabase.configured,
+    storageProvider: "supabase",
+    supabaseStorage: supabase.configured,
+    supabaseConfigured: supabase.configured,
+    supabaseUrlConfigured: supabase.urlConfigured,
+    supabaseServiceRoleConfigured: supabase.serviceRoleConfigured,
+    supabaseBucket: supabase.bucket,
+    blobStorage: false,
+    blobRemoved: true,
     scriptAI,
     scriptMode: scriptAI ? "optional-openai" : "local-fallback",
-    ready: blobStorage,
+    ready: supabase.configured,
     videoAI,
     videoAIConfigured: videoAI,
     videoAIProvider: videoAI ? "magic-hour" : null,
@@ -59,7 +54,6 @@ app.get("/api/health", async (_req, res) => {
     photoAIProvider: videoAI ? "magic-hour" : null,
     photoAIModel: videoAI ? (process.env.MAGIC_HOUR_IMAGE_MODEL || "qwen-edit") : null,
     photoAIOutput: videoAI ? (process.env.MAGIC_HOUR_IMAGE_RESOLUTION || "640px") : null,
-    photoAIAdvancedBlobOpsPerImage: 2,
     videoFallback: true,
     videoFallbackMode: "local-free-motion-9x16",
     videoEngineModes: ["auto","ai","local"],
@@ -71,9 +65,8 @@ app.get("/api/health", async (_req, res) => {
 });
 app.get("/api/styles", (_req, res) => res.json(getStyleList()));
 
-// AI Photo 3-View / Triptych editor. This intentionally uses only two Blob
-// advanced operations per request: one source upload and one final output
-// upload. The AI work itself is performed by Magic Hour.
+// AI Photo 3-View / Triptych editor. Source and final files are stored in
+// Supabase Storage; Vercel Blob is not used.
 app.post("/api/photo-triptych", upload.single("photo"), async (req, res) => {
   try {
     const photo = req.file;
@@ -83,10 +76,8 @@ app.post("/api/photo-triptych", upload.single("photo"), async (req, res) => {
     if (photo.size > 3 * 1024 * 1024) return res.status(413).json({ error: "Foto maksimal 3 MB." });
 
     const { createPhotoTriptych } = await import("./src/services/photo-triptych.js");
-    const baseUrl = String(process.env.PUBLIC_BASE_URL || process.env.URL || process.env.DEPLOY_PRIME_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
     const result = await createPhotoTriptych({
       photo,
-      baseUrl,
       mode: String(req.body?.mode || "fashion-triptych"),
       customPrompt: String(req.body?.prompt || "")
     });
@@ -95,20 +86,6 @@ app.post("/api/photo-triptych", upload.single("photo"), async (req, res) => {
     console.error("Photo triptych error", e?.stack || e);
     const status = /credits|402|quota|insufficient/i.test(String(e?.message || "")) ? 402 : 500;
     return res.status(status).json({ error: e?.message || "AI Photo gagal diproses." });
-  }
-});
-
-app.get("/api/blob", async (req, res) => {
-  try {
-    const key = String(req.query.key || "");
-    if (!key || key.startsWith("/") || key.includes("..")) return res.status(400).json({ error: "Invalid blob key." });
-    const { getBlobUrl } = await import("./src/services/blob-store.js");
-    const url = await getBlobUrl(key);
-    if (!url) return res.status(404).json({ error: "Blob tidak ditemukan." });
-    return res.redirect(302, url);
-  } catch (e) {
-    console.error("Blob redirect error", e);
-    return res.status(500).json({ error: "Gagal membaca blob." });
   }
 });
 

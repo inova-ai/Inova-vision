@@ -1,54 +1,56 @@
-# INOVA VISION AI — Vercel Edition 6.2.0
+# INOVA VISION 6.7.0 — Supabase Storage (No Vercel Blob)
 
-Migrated from Netlify to Vercel, with Vercel Blob delivery for uploaded media and final MP4 files.
+Versi ini memindahkan penyimpanan permanen INOVA VISION dari Vercel Blob ke **Supabase**.
+Vercel tetap dipakai sebagai hosting/API dan FFmpeg tetap memproses file sementara di `/tmp`.
 
-## Vercel setup
-1. Import this ZIP as a new Vercel project.
-2. Deploy once.
-3. Open the project in Vercel → **Storage** → create/connect a **Vercel Blob** store.
-4. The store must use **Public** access because the browser plays the final MP4 directly from the Blob CDN.
-5. Redeploy after connecting the store if Vercel asks you to.
+## Yang berubah
 
-The current `@vercel/blob` SDK supports Vercel OIDC authentication, so a long-lived `BLOB_READ_WRITE_TOKEN` is not necessarily required when the Blob store is connected to the same Vercel project. The code also supports the token if one is supplied.
+- **Vercel Blob dihapus dari package dan source code.**
+- Foto/video final disimpan di **Supabase Storage**.
+- Status job disimpan di **Supabase Postgres** (`public.inova_jobs`) agar polling tetap bekerja lintas Vercel Function instance.
+- Scene MP4 dan audio TTS tetap lokal di `/tmp` selama render; tidak ada upload per scene.
+- Mode AI Video mengunggah foto sumber ke Supabase agar Magic Hour dapat mengambil URL publik.
+- AI Photo 3-View juga memakai Supabase untuk foto sumber + hasil final.
+- Tidak ada `@vercel/blob`, `BLOB_READ_WRITE_TOKEN`, `BLOB_STORE_ID`, atau OIDC Blob yang dibutuhkan lagi.
 
-## Render architecture
-- Node.js 22 Vercel Function
-- FFmpeg local renderer
-- `waitUntil()` for the asynchronous render worker
-- Vercel Blob for jobs, source uploads, scene MP4s and final MP4
-- Final MP4 is returned as the real Vercel Blob CDN URL instead of being buffered through an API proxy
-- H.264 + AAC + yuv420p + faststart + 30 FPS validation
-- Photo → Video and Video → Video editing remain available
-- Prompt-based video filters remain available
+## Setup Supabase — wajib satu kali
 
-The project keeps the existing 4 MB server upload guard because Vercel server-side function request bodies are limited to about 4.5 MB. For larger source videos, a future client-direct Blob upload can remove that bottleneck.
+1. Buat project di Supabase.
+2. Buka **SQL Editor** dan jalankan isi `supabase-schema.sql`.
+3. Di Vercel → Project → Settings → Environment Variables, tambahkan:
+   - `SUPABASE_URL` = URL project Supabase, contoh `https://xxxx.supabase.co`
+   - `SUPABASE_SERVICE_ROLE_KEY` = **service_role key** dari Supabase. Simpan sebagai server secret; jangan pernah ditaruh di frontend.
+   - `SUPABASE_STORAGE_BUCKET` = `inova-vision` (opsional; default sudah `inova-vision`)
+4. Deploy ulang Vercel.
 
+Aplikasi akan membuat bucket `inova-vision` jika belum ada dan memastikan bucket bersifat **Public**, karena URL hasil perlu bisa dibaca browser dan provider AI.
 
-## Optional AI Video
-Set `MAGIC_HOUR_API_KEY` in Vercel to enable Wan 2.2 Image-to-Video. The UI supports Auto, AI, and Local Free. Auto falls back to Local Free if AI is unavailable or fails.
+## Magic Hour (opsional)
 
+Untuk AI Video dan AI Photo 3-View, tambahkan:
 
-## V13 — Blob Operations Optimized
+- `MAGIC_HOUR_API_KEY`
+- `MAGIC_HOUR_VIDEO_MODEL` (opsional, default `wan-2.2`)
+- `MAGIC_HOUR_IMAGE_MODEL` (opsional, default `qwen-edit`)
+- `MAGIC_HOUR_IMAGE_RESOLUTION` (opsional, default `640px`)
 
-- Menghapus seluruh `Blob list()` dari health/job lookup.
-- Status job memakai satu JSON Blob yang dibaca dengan `get()`; progress/step yang sering berubah hanya disimpan di memory selama worker berjalan.
-- Persist job hanya pada milestone penting: job dibuat, perubahan status penting, scene selesai, compose, completed/failed.
-- Voice Edge TTS tidak lagi di-upload ke Blob per scene; audio disimpan sementara di `/tmp`.
-- Scene MP4 tidak lagi di-upload satu per satu ke Blob; scene disimpan sementara dan langsung di-compose. Hanya `final.mp4` yang dipersist ke Blob.
-- Mode Local/Free tidak lagi meng-upload foto sumber ke Blob; foto diproses dari `/tmp`.
-- Video sumber dan musik juga diproses dari `/tmp` selama worker.
-- Mode AI tetap meng-upload foto sumber ke Blob karena provider AI membutuhkan URL gambar publik.
-- Polling UI diperlonggar menjadi 2,5 detik untuk mengurangi read operations.
+Tanpa Magic Hour, Local Free Motion tetap bisa digunakan.
 
-V13 ditujukan untuk menurunkan Advanced Blob Operations secara drastis pada Hobby. Vercel saat ini memasukkan upload sebagai advanced operation dan Hobby memiliki 2.000 advanced operations/bulan.
+## OpenAI (opsional)
 
+- `OPENAI_API_KEY` hanya diperlukan bila ingin creative plan berbasis OpenAI. Tanpa key, aplikasi memakai local fallback.
 
-## V6.6 AI Photo 3-View / Triptych
+## Cek koneksi
 
-V6.6 adds an **AI Photo 3-View** tool. The first uploaded product photo can be transformed into one vertical 9:16 catalog-style triptych: front view, back view, and 3/4 view. A product-angle preset is also available.
+Buka `/api/health`. Pada versi benar, respons akan menunjukkan:
 
-The feature uses Magic Hour AI Image Editor with `qwen-edit` by default. Configure `MAGIC_HOUR_API_KEY` in Vercel. The default 640px output keeps AI credits lower.
+- `storageProvider: "supabase"`
+- `supabaseStorage: true`
+- `blobStorage: false`
+- `blobRemoved: true`
 
-### Blob operation budget
+Jika `supabaseStorage` masih `false`, periksa `SUPABASE_URL` dan `SUPABASE_SERVICE_ROLE_KEY` di Environment Variables lalu deploy ulang.
 
-The triptych endpoint intentionally performs only two Vercel Blob advanced operations per result: **1 source upload + 1 final output upload**. It does not use Blob `list()`, job-state polling writes, scene uploads, or per-scene voice uploads.
+## Batas upload
+
+Jalur upload server masih memakai batas konservatif 3 MB per file dan total sekitar 4 MB agar aman terhadap batas request serverless. Penyimpanan permanen tidak lagi menggunakan Vercel Blob.

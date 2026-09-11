@@ -22,3 +22,7 @@ The current `@vercel/blob` SDK supports Vercel OIDC authentication, so a long-li
 - Prompt-based video filters remain available
 
 The project keeps the existing 4 MB server upload guard because Vercel server-side function request bodies are limited to about 4.5 MB. For larger source videos, a future client-direct Blob upload can remove that bottleneck.
+
+
+## Optional AI Video
+Set `MAGIC_HOUR_API_KEY` in Vercel to enable Wan 2.2 Image-to-Video. The UI supports Auto, AI, and Local Free. Auto falls back to Local Free if AI is unavailable or fails.

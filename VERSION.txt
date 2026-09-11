@@ -1,1 +1,1 @@
-INOVA VISION 6.3.6-public-versioned-job-store-fix
+6.4.0-ai-video-wan-fallback

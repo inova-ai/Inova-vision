@@ -29,10 +29,11 @@ app.get("/api/health", async (_req, res) => {
   const blobStorage = blobCheck.ok;
   const blobAuth = getBlobAuthInfo();
   const scriptAI = Boolean(process.env.OPENAI_API_KEY);
+  const videoAI = Boolean(process.env.MAGIC_HOUR_API_KEY);
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.3.6-public-versioned-job-store-fix",
+    version: "6.4.0-ai-video-wan-fallback",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,
@@ -49,12 +50,13 @@ app.get("/api/health", async (_req, res) => {
     scriptAI,
     scriptMode: scriptAI ? "optional-openai" : "local-fallback",
     ready: blobStorage,
-    videoAI: false,
-    videoAIConfigured: false,
-    videoAIProvider: null,
-    videoAIModel: null,
+    videoAI,
+    videoAIConfigured: videoAI,
+    videoAIProvider: videoAI ? "magic-hour" : null,
+    videoAIModel: videoAI ? (process.env.MAGIC_HOUR_VIDEO_MODEL || "wan-2.2") : null,
     videoFallback: true,
     videoFallbackMode: "local-free-motion-9x16",
+    videoEngineModes: ["auto","ai","local"],
     hosting: "vercel",
     voiceAI: true,
     voiceProvider: "free-edge-tts",
@@ -101,6 +103,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
       style: req.body.style,
       duration: req.body.duration,
       cta: req.body.cta,
+      videoEngine: req.body.videoEngine,
       musicFile: req.files.music?.[0] || null,
       baseUrl
     });

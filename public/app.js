@@ -110,7 +110,7 @@ function setProgress(p, title, step, status="RENDERING") {
 async function poll() {
   if (!activeJob) return;
   try {
-    const r = await fetch(`/api/jobs/${activeJob}`);
+    const r = await fetch(`/api/jobs/${activeJob}?t=${Date.now()}`, { cache: "no-store", headers: { "Cache-Control": "no-cache", "Accept": "application/json" } });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || "Job error");
     const j = data.job;

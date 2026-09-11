@@ -526,11 +526,11 @@ export async function createPipelineJob({photos=[],videoFile=null,musicFile,prod
       : storyboard.map((s,i)=>({scene:i+1,title:s.title,duration:s.duration,status:"queued",progress:0,script:scripts[i]?.script||"",imageIndex:scripts[i]?.imageIndex||0,shot:scripts[i]?.shot||null,attempt:0,renderMode:"local-free-motion"})),
     createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),publicBaseUrl:baseUrl,engine:sourceType==="video"?"local-video-edit":selectedVideoEngine==="ai"?"ai-video":"local-free-motion"
   };
-  await saveJob(job);return getJob(id);
+  await saveJob(job);return job;
 }
 
-export async function processPipelineJob(jobId){
-  let job=await getJob(jobId);
+export async function processPipelineJob(jobId, initialJob=null){
+  let job=initialJob || await getJob(jobId);
   if(!job) throw new Error("Job tidak ditemukan.");
   if(job.status==="completed") return job;
   await updateJob(jobId,{status:"rendering",progress:5,step:`Free Motion Engine · ${job.sceneCount} scene`});

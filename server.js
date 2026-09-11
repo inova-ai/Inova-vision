@@ -33,7 +33,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.4.0-ai-video-wan-fallback",
+    version: "6.4.1-ai-video-job-stable",
     engine: "local-free-motion",
     configured: blobStorage,
     replicateRemoved: true,
@@ -111,7 +111,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
     // response fast, but explicitly extend the Function lifecycle with
     // waitUntil() so FFmpeg is not killed immediately after 202 is returned.
     waitUntil(
-      processPipelineJob(job.id).catch(async (workerError) => {
+      processPipelineJob(job.id, job).catch(async (workerError) => {
         console.error("Vercel render worker failed:", workerError?.stack || workerError);
         try {
           await updateJob(job.id, { status: "failed", progress: 0, step: `Worker render gagal: ${workerError?.message || "unknown error"}` });
@@ -120,7 +120,7 @@ app.post("/api/jobs", upload.fields([{ name: "photos", maxCount: 8 }, { name: "v
         }
       })
     );
-    res.status(202).json({ job: await getJob(job.id) });
+    res.status(202).json({ job });
   } catch (e) {
     console.error("Create job error", e);
     res.status(500).json({ error: e.message || "Gagal membuat job." });

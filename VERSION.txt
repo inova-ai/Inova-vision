@@ -1,1 +1,1 @@
-6.4.0-ai-video-wan-fallback
+6.4.1-ai-video-job-stable

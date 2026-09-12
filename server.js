@@ -31,7 +31,7 @@ app.get("/api/health", async (_req, res) => {
   res.json({
     ok: true,
     service: "INOVA VISION AI",
-    version: "6.9.5-kling-25-subscription-safe",
+    version: "6.9.6-wan-22-subscription-safe",
     engine: "local-free-motion",
     configured: supabase.configured,
     storageProvider: "supabase",
@@ -48,7 +48,7 @@ app.get("/api/health", async (_req, res) => {
     videoAI,
     videoAIConfigured: videoAI,
     videoAIProvider: videoAI ? "magic-hour" : null,
-    videoAIModel: videoAI ? ("kling-2.5") : null,
+    videoAIModel: videoAI ? ("wan-2.2") : null,
     photoAI: videoAI,
     photoAIConfigured: videoAI,
     photoAIProvider: videoAI ? "magic-hour" : null,

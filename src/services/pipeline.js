@@ -158,10 +158,10 @@ function videoEngineConfigured(engine) {
 async function createMagicHourImageToVideo({imageUrl, prompt, duration, job}) {
   const token = process.env.MAGIC_HOUR_API_KEY;
   if (!token) throw new Error("MAGIC_HOUR_API_KEY belum dikonfigurasi.");
-  // Kling 2.5 is intentionally used for motion-heavy I2V. Magic Hour documents
-  // it as strong for motion/action and reliable image-to-video control.
-  // Locked to Kling 2.5 for subscription compatibility.
-  const model = "kling-2.5";
+  // Use the subscription-safe WAN 2.2 image-to-video model.
+  // Do not silently fall back to local motion: if Magic Hour rejects the model,
+  // expose the real API error so the user never receives a fake AI-motion result.
+  const model = "wan-2.2";
   const allowed = [5,10];
   const requested = Math.max(5, Math.min(10, Number(duration)||5));
   const endSeconds = allowed.reduce((best, n) => Math.abs(n-requested) < Math.abs(best-requested) ? n : best, allowed[0]);
@@ -346,7 +346,7 @@ async function renderMagicHourScene(job, sceneIndex){
     await validateMedia(scenePath,`Video final scene ${sceneIndex+1}`);
     const probe=await probeMedia(scenePath);
     if(probe.duration<Math.max(0.5,duration*0.65)) throw new Error(`AI scene ${sceneIndex+1} terlalu pendek: ${probe.duration.toFixed(2)}s.`);
-    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:"kling-2.5",aiCredits:ai.credits,aiProjectId:ai.projectId};
+    return {_localPath:scenePath,voice:voice?{provider:voice.provider,voice:voice.voice,targetSeconds:voice.targetSeconds}:null,renderMode:"ai-video",aiProvider:"magic-hour",aiModel:"wan-2.2",aiCredits:ai.credits,aiProjectId:ai.projectId};
   } finally {}
 }
 
@@ -561,7 +561,7 @@ export async function processPipelineJob(jobId, initialJob=null){
       job=await getJob(jobId);
       if(job.status==="failed") throw new Error(job.step||"Job gagal.");
       const wantsAI = job.videoEngine === "ai" && aiVideoEnabled();
-      job=await updateJob(jobId,{progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`Kling 2.5 · AI motion scene ${i+1}/${job.sceneCount}`:`Render free motion scene ${i+1}/${job.sceneCount}`});
+      job=await updateJob(jobId,{progress:Math.max(8,Math.round((i/job.sceneCount)*85)),step:wantsAI?`WAN 2.2 · AI motion scene ${i+1}/${job.sceneCount}`:`Render free motion scene ${i+1}/${job.sceneCount}`});
       let result;
       let usedAI = false;
       if(wantsAI){
@@ -569,7 +569,7 @@ export async function processPipelineJob(jobId, initialJob=null){
         // The local renderer only moves/crops pixels and can look like camera shake;
         // if Kling fails, expose the real error so the user does not receive a
         // misleading "AI" result.
-        job=await updateJob(jobId,{step:`Kling 2.5 · AI motion scene ${i+1}/${job.sceneCount}`});
+        job=await updateJob(jobId,{step:`WAN 2.2 · AI motion scene ${i+1}/${job.sceneCount}`});
         result = await renderMagicHourScene(job,i);
         usedAI = true;
       } else {
